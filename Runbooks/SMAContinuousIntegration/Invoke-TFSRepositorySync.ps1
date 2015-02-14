@@ -72,11 +72,12 @@ Workflow Invoke-TFSRepositorySync
 										$FileToUpdate = $File.FullPath
                                         # TODO : Better error handling
                                         # NOTE: SMACred must have access to read files in local git folder
-                                        # NOTE: To make processing faster add logic to save referance list for Runbooks to SMA variabl
+                                        # NOTE: To make processing faster add logic to save referance list for Runbooks to SMA variabel
                                         InlineScript {
                                             Import-VCSRunbooks -wfToUpdateList $Using:FileToUpdate `
                                                                -wfAllList $Using:Runbooks -Tag $Using:TagLine `
-                                                               -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
+                                                               -WebServiceEndpoint $Using:WebServiceEndpoint `
+															   -Port $Using:Port
                                                                
                                         } -PSCredential $SMACred -PSRequiredModules "SMAContinuousIntegrationModule"
                                     }
