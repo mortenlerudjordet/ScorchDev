@@ -43,7 +43,7 @@ Workflow Invoke-GitRepositorySync
             
             $CleanupOrphanRunbooks = $False
             $CleanupOrphanAssets = $False
-
+            
             # Only Process the file 1 time per set. Sort by change type so Adds get
             # Priority over deletes. Sorts .ps1 files before .json files
             Foreach($File in ($RepoChange.Files | Sort-Object ChangeType |Sort-Object FileExtension -Descending))
@@ -67,9 +67,17 @@ Workflow Invoke-GitRepositorySync
                                     }
                                     Default
                                     {
-                                        Publish-SMARunbookChange -FilePath $File.FullPath `
-                                                                 -CurrentCommit $RepoChange.CurrentCommit `
-                                                                 -RepositoryName $RepositoryName
+                                        $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit);"
+                                        $RunbookPath = $File.FullPath
+                                        # TODO : Better error handling
+                                        # NOTE: SMACred must have access to read files in local git folder
+                                        # NOTE: To make processing faster add logic to save referance list for Runbooks to SMA variable
+                                        InlineScript {
+                                            Import-VCSRunbooks -wfToUpdateList $Using:RunbookPath `
+                                                               -wfAllList $Using:RepoAllWFs -Tag $Using:TagLine `
+                                                               -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
+                                                               
+                                        } -PSCredential $SMACred -PSRequiredModules "SMAContinuousIntegrationModule"
                                     }
                                 }
                             }
