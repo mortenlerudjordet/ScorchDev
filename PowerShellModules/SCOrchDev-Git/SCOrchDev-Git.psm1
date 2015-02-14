@@ -68,14 +68,14 @@ Function Find-GitRepoChange
     {
         if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
         {
-            $ReturnObj.Files += @{ 'FullPath' = "$($Path)\$($Matches[2].Replace('/','\'))" ;
-                                   'FileName' = $Matches[3] ;
-                                   'FileExtension' = $Matches[4].ToLower()
+            $ReturnObj.Files += @{ 'FullPath' = "$($Path)\$($Matches[2].Replace('/','\'))";
+                                   'FileName' = $Matches[3];
+                                   'FileExtension' = $Matches[4].ToLower();
                                    'ChangeType' = $Matches[1] }
         }
     }
     
-    return (ConvertTo-Json $ReturnObj)
+    return (ConvertTo-Json -InputObject $ReturnObj)
 }
 <#
     .Synopsis
