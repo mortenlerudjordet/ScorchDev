@@ -102,7 +102,7 @@ Function Get-GitRepoWFs {
     }
     # Assumption : Only workflows in the Runbooks folder matter for hindering nesting breakage in SMA
     $AllLocalPSFiles = Get-ChildItem -Path $Path -Filter "*.ps1" -Recurse:$True -File:$True | 
-    Where-Object -FilterScript {$_.Directory -match "Runbooks"} | 
+    Where-Object -FilterScript {$_.Directory -like "*\Runbooks\*"} | 
     Select-Object -ExpandProperty FullName
     
     Return (ConvertTo-Json $LocalPSFiles)
