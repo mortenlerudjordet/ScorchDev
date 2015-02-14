@@ -26,8 +26,13 @@ Workflow Invoke-GitRepositorySync
         $RepoChangeJSON = Find-GitRepoChange -Path $($RepositoryInformation.Path) `
                                              -Branch $RepositoryInformation.Branch `
                                              -CurrentCommit $RepositoryInformation.CurrentCommit
-
+        # Get all workflows in current repo set
+        $RepoAllWFsJSON = Get-GitRepoWFs -Path $($RepositoryInformation.Path) `
+                                         -Branch $RepositoryInformation.Branch
+        
         $RepoChange = ConvertFrom-JSON -InputObject $RepoChangeJSON
+        $RepoAllWFs = ConvertFrom-JSON -InputObject $RepoAllWFsJSON
+
         if($RepoChange.CurrentCommit -ne $RepositoryInformation.CurrentCommit)
         {
             Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($RepoChange.CurrentCommit)]"

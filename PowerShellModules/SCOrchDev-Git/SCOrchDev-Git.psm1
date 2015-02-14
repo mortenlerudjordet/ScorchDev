@@ -12,7 +12,7 @@ Function Find-GitRepoChange
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
     # Set current directory to the git repo location
-    Set-Location $Path
+    Set-Location -Path $Path
       
     $ReturnObj = @{ 'CurrentCommit' = $CurrentCommit;
                     'Files' = @() }
@@ -76,5 +76,32 @@ Function Find-GitRepoChange
     }
     
     return (ConvertTo-Json $ReturnObj)
+}
+<#
+    .Synopsis
+        Get all workflows in a set from the target Git Repo / Branch 
+#>
+Function Get-GitRepoWFs {
+    Param([Parameter(Mandatory=$true) ] $Path,
+          [Parameter(Mandatory=$true) ] $Branch
+          )
+    
+    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+    
+    # Set current directory to the git repo location
+    Set-Location -Path $Path
+      
+    $AllLocalPSFiles = New-Object –TypeName System.Collections.ArrayList
+
+    if(-not ("$(git branch)" -match '\*\s(\w+)'))
+    {
+        Throw-Exception -Type 'GitTargetBranchNotFound' `
+                        -Message 'git could not find any current branch' `
+                        -Property @{ 'result' = $(git branch) ;
+                                     'match'  = "$(git branch)" -match '\*\s(\w+)'}
+    }
+
+    $AllLocalPSFiles = Get-ChildItem -Path $Path -Filter "*.ps1" -Recurse | Select-Object -ExpandProperty FullName
+    Return (ConvertTo-Json $LocalPSFiles)
 }
 Export-ModuleMember -Function * -Verbose:$false
