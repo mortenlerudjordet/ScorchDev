@@ -28,7 +28,8 @@ Workflow Invoke-GitRepositorySync
                                              -CurrentCommit $RepositoryInformation.CurrentCommit
         # Get all workflows in current repo set
         $RepoAllWFsJSON = Get-GitRepoWFs -Path $($RepositoryInformation.Path) `
-                                         -Branch $RepositoryInformation.Branch
+                                         -Branch $RepositoryInformation.Branch `
+                                         -RunBookFolder $RepositoryInformation.RunbookFolder
         
         $RepoChange = ConvertFrom-JSON -InputObject $RepoChangeJSON
         $RepoAllWFs = ConvertFrom-JSON -InputObject $RepoAllWFsJSON
@@ -71,7 +72,7 @@ Workflow Invoke-GitRepositorySync
                                         $RunbookPath = $File.FullPath
                                         # TODO : Better error handling
                                         # NOTE: SMACred must have access to read files in local git folder
-                                        # NOTE: To make processing faster add logic to save referance list for Runbooks to SMA variable
+                                        # NOTE: To make processing faster add logic to save referance list for Runbooks to SMA variabl
                                         InlineScript {
                                             Import-VCSRunbooks -wfToUpdateList $Using:RunbookPath `
                                                                -wfAllList $Using:RepoAllWFs -Tag $Using:TagLine `
