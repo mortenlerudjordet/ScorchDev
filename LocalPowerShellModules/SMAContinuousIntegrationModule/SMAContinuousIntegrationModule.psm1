@@ -39,11 +39,11 @@ Function Import-VCSRunbooks
 	# if ErrorAction Stop is used
     $wfs = Get-Childitem -Path $wfToUpdateList -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-        # Dont run more code if error is detected
+        # Dont run more code if error is detected, if ErrorAction Stop is used directly on function call SMA vil not record the error in the history tab
         # Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
 		#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
         # If errorAction Stop is used in calling workflow execution will suspend executing next line
-        Write-Error -Message "Suspending runbook"
+        Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
         $oErr = $Null
 		#Return
     } 
@@ -73,15 +73,13 @@ Function Import-VCSRunbooks
         Write-Verbose -Message "Retrieving references for: $($wfName)"
         Write-Debug -Message "Import-VCSRunbooks: Calling Get-RunbookReferences with: $($wf) as input" 
         Get-RunbookReferences -Path $wf -BasePath $wfAllList -ErrorAction Continue -ErrorVariable oErr
-		If($oErr) {
-			# Dont run more code if error is detected
-			# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-			#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-			# If errorAction Stop is used in calling workflow execution will suspend executing next line
-			Write-Error -Message "Suspending runbook"
-			$oErr = $Null
-			#Return
-		} 
+        If($oErr) {
+		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+            # Using Continue and ErrorVariable the Error is written in history tab
+		    Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		    $oErr = $Null
+		    #Return
+	    }
         $wfName = $Null
     }
 	# Build dependencies tree for updated workflows
@@ -105,15 +103,13 @@ Function Import-VCSRunbooks
 		Write-Verbose -Message "Retrieving all dependencies for: $($wf.BaseName)"
 		Write-Debug -Message "Import-VCSRunbooks: calling Get-RunbookDependencies with $($wf.Fullname)"
 		Get-RunbookDependencies -Path $wf.FullName -ErrorAction Continue -ErrorVariable oErr
-		If($oErr) {
-			# Dont run more code if error is detected
-			# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-			#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-			# If errorAction Stop is used in calling workflow execution will suspend executing next line
-			Write-Error -Message "Suspending runbook"
-			$oErr = $Null
-			#Return
-		} 
+        If($oErr) {
+		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+            # Using Continue and ErrorVariable the Error is written in history tab
+		    Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		    $oErr = $Null
+		    #Return
+	    } 
 		Write-Debug -Message "Import-VCSRunbooks: Adding retrieved dependencies to Global:wfDependancyList"
 		$RunbookDep.RunbookDependencies = $Global:wfDependancyList
 		Write-Debug -Message "Import-VCSRunbooks: Adding retrieved dependencies to $Global:wfDependancyList"
@@ -132,15 +128,13 @@ Function Import-VCSRunbooks
 		If($DoneProcessList -notcontains $wf.FullName) {
             Write-Debug -Message "Import-VCSRunbooks: Publishing Runbook: $($wf.RunbookName)"
 		    Publish-Runbook -Path $wf.FullName -WebServiceEndpoint $WebServiceEndpoint -Tag $Tag -Port $Port -ErrorAction Continue -ErrorVariable oErr
-			If($oErr) {
-				# Dont run more code if error is detected
-				# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-				#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-				# If errorAction Stop is used in calling workflow execution will suspend executing next line
-				Write-Error -Message "Suspending runbook"
-				$oErr = $Null
-				#Return
-			} 
+            If($oErr) {
+		        # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+                # Using Continue and ErrorVariable the Error is written in history tab
+		        Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		        $oErr = $Null
+		        #Return
+	        }
             $DoneProcessList += $wf.RunbookName
         }
         Else {
@@ -159,15 +153,13 @@ Function Import-VCSRunbooks
 			    Write-Debug -Message "Import-VCSRunbooks: Publishing dependency: $($wfDep)"
                 # Dont change tag for dependency runbooks
 			    Publish-Runbook -Path $wfDep -WebServiceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
-				If($oErr) {
-					# Dont run more code if error is detected
-					# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-					#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-					# If errorAction Stop is used in calling workflow execution will suspend executing next line
-					Write-Error -Message "Suspending runbook"
-					$oErr = $Null
-					#Return
-				} 
+                If($oErr) {
+		            # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+                    # Using Continue and ErrorVariable the Error is written in history tab
+		            Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		            $oErr = $Null
+		            #Return
+	            }
                 $DepName = $Null
             }
             Else {
@@ -219,7 +211,14 @@ Function Get-RunbookDependencies
 					Write-Verbose -Message "DEPENDENCY FOUND: $($Ref) --> $($wf.RunbookName)"
 					# Call recurs to find next dependencies
 					$Global:wfDependancyList += $wf.FullName
-                    Get-RunbookDependencies -Path $wf.FullName
+                    Get-RunbookDependencies -Path $wf.FullName -ErrorAction Continue -ErrorVariable oErr
+                    If($oErr) {
+					    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+                        # Using Continue and ErrorVariable the Error is written in history tab
+					    Write-Error -Message "Error in Get-RunbookDependencies: $oErr"
+					    $oErr = $Null
+					    #Return
+				    } 
                     
 				}
 			}
@@ -253,7 +252,15 @@ Function Get-RunbookReferences
     # Workflow name
 	$wfName = (($Path.Split('\')).Split('.')[-2])
     Write-Debug -Message "Get-RunbookReferences Workflow Name: $wfName"
-	$ThisWf = Get-Content -Path $Path -Raw -ErrorAction Stop
+	$ThisWf = Get-Content -Path $Path -Raw -ErrorAction Continue -ErrorVariable oErr
+    If($oErr) {
+		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+        # Using Continue and ErrorVariable the Error is written in history tab
+		Write-Error -Message "Error in Get-RunbookReferences: $oErr"
+		$oErr = $Null
+		#Return
+	}
+    
     $ThisWfSB = [scriptblock]::Create($ThisWf)
     $TokenizedWF = [System.Management.Automation.PSParser]::Tokenize($ThisWfSB,[ref]$null)
     $referencedCommands = $TokenizedWF | where {$_.Type -eq "Command"} | Select-Object -ExpandProperty "Content"
@@ -269,14 +276,12 @@ Function Get-RunbookReferences
     # Retrieve name of all workflows in source control
 	$AllWFs = Get-ChildItem -Path $BasePath -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-        # Dont run more code if error is detected
-        # Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-		#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-        # If errorAction Stop is used in calling workflow execution will suspend executing next line
-        Write-Error -Message "Suspending runbook"
-        $oErr = $Null
+		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+        # Using Continue and ErrorVariable the Error is written in history tab
+		Write-Error -Message "Error in Get-RunbookReferences: $oErr"
+		$oErr = $Null
 		#Return
-    } 
+	}  
     
 	Write-Debug -Message "Get-RunbookReferences: Files in basepath: $($AllWFs)"
     # Process potential references in workflow 
@@ -350,28 +355,25 @@ Function Publish-Runbook
     {
         Write-Debug -Message "Importing Runbook: $($wfName)"
         $SmaRb = Import-SmaRunbook -Path $Path -WebServiceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
-		If($oErr) {
-			# Dont run more code if error is detected
-			# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-			#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-			# If errorAction Stop is used in calling workflow execution will suspend executing next line
-			Write-Error -Message "Suspending runbook"
-			$oErr = $Null
-			#Return
-		} 
+        If($oErr) {
+		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+            # Using Continue and ErrorVariable the Error is written in history tab
+		    Write-Error -Message "Error in Publish-Runbook: $oErr"
+		    $oErr = $Null
+		    #Return
+	    }  
+
         Write-Debug -Message "Writing tag for runbook ID: $($SmaRb.RunbookID )"
         If($Tag) {
 			Write-Debug -Message "Setting tag"
 			Set-SmaRunbookTags -RunbookID $SmaRb.RunbookID -Tags $Tag -WebserviceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
-			If($oErr) {
-				# Dont run more code if error is detected
-				# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-				#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-				# If errorAction Stop is used in calling workflow execution will suspend executing next line
-				Write-Error -Message "Suspending runbook"
-				$oErr = $Null
-				#Return
-			} 
+            If($oErr) {
+		        # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+                # Using Continue and ErrorVariable the Error is written in history tab
+		        Write-Error -Message "Error in Publish-Runbook: $oErr"
+		        $oErr = $Null
+		        #Return
+	        }  
         }
         Else {
 			Write-Debug -Message "No tag set"
@@ -381,15 +383,14 @@ Function Publish-Runbook
     {
         Write-Debug -Message "Editing Runbook: $($wfName)"
         Edit-SmaRunbook -Path $Path -WebServiceEndpoint $WebServiceEndpoint -Port $Port -Name $wfName -Overwrite -ErrorAction Continue -ErrorVariable oErr
-		If($oErr) {
-			# Dont run more code if error is detected
-			# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-			#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-			# If errorAction Stop is used in calling workflow execution will suspend executing next line
-			Write-Error -Message "Suspending runbook"
-			$oErr = $Null
-			#Return
-		} 
+        If($oErr) {
+		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+            # Using Continue and ErrorVariable the Error is written in history tab
+		    Write-Error -Message "Error in Publish-Runbook: $oErr"
+		    $oErr = $Null
+		    #Return
+	    }  
+
         Write-Debug -Message "Writing tag for runbook ID: $($SmaRb.RunbookID)"
         If($Tag) {
 			Write-Debug -Message "Updating tags"
@@ -397,15 +398,14 @@ Function Publish-Runbook
 				$Tag = $Tag + ";" + $SmaRb.Tags
 			}
 			Set-SmaRunbookTags -RunbookID $SmaRb.RunbookID -Tags $Tag -WebserviceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
-			If($oErr) {
-				# Dont run more code if error is detected
-				# Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-				#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-				# If errorAction Stop is used in calling workflow execution will suspend executing next line
-				Write-Error -Message "Suspending runbook"
-				$oErr = $Null
-				#Return
-			} 
+            If($oErr) {
+		        # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+                # Using Continue and ErrorVariable the Error is written in history tab
+		        Write-Error -Message "Error in Publish-Runbook: $oErr"
+		        $oErr = $Null
+		        #Return
+	        }  
+
         }
         Else {
 			Write-Debug -Message "No tag updated"
@@ -414,14 +414,12 @@ Function Publish-Runbook
     Write-Debug -Message "Publishing Runbook ID: $($SmaRb.RunbookID)"
     $publishedId = Publish-SmaRunbook -Id $SmaRb.RunbookID -WebServiceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-        # Dont run more code if error is detected
-        # Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-		#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-        # If errorAction Stop is used in calling workflow execution will suspend executing next line
-        Write-Error -Message "Suspending runbook"
-        $oErr = $Null
+		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+        # Using Continue and ErrorVariable the Error is written in history tab
+		Write-Error -Message "Error in Publish-Runbook: $oErr"
+		$oErr = $Null
 		#Return
-    } 
+	}  
 }
 Function Set-SmaRunbookTags
 {
@@ -452,14 +450,12 @@ Param
 	Write-Debug -Message  "Runbook URI: $($RunbookURI)"
 	$runbook = Get-SmaRunbook -Id $RunbookID -WebServiceEndpoint $WebserviceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-        # Dont run more code if error is detected
-        # Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-		#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-        # If errorAction Stop is used in calling workflow execution will suspend executing next line
-        Write-Error -Message "Suspending runbook"
-        $oErr = $Null
+		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+        # Using Continue and ErrorVariable the Error is written in history tab
+		Write-Error -Message "Error in Publish-Runbook: $oErr"
+		$oErr = $Null
 		#Return
-    } 
+	}  
  
 	[xml]$baseXML = @'
 <?xml version="1.0" encoding="utf-8"?>
@@ -483,13 +479,12 @@ Param
 
 	$output = Invoke-RestMethod -Method Merge -Uri $RunbookURI -Body $baseXML -UseDefaultCredentials -ContentType 'application/atom+xml' -Verbose:$False -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-        # Dont run more code if error is detected
-        # Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-		#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-        # If errorAction Stop is used in calling workflow execution will suspend executing next line
-        Write-Error -Message "Suspending runbook"
-        $oErr = $Null
+		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
+        # Using Continue and ErrorVariable the Error is written in history tab
+		Write-Error -Message "Error in Publish-Runbook: $oErr"
+		$oErr = $Null
 		#Return
-    } 
+	}  
+
 	Write-Debug -Message "Finished Set-SmaRunbookTags for $RunbookID"
 }

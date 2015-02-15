@@ -3,11 +3,13 @@
         Check TFS repository for new commits. If found sync the changes into
         the current SMA environment
 
-    .Parameter CollectionName
+    .Parameter ProjectName
+        Name of the project in TFS, the variables for TFSServer, Collection, Branch and RunbookFolder
+        must be created in RepositoryInformation variable set in SMA
 #>
 Workflow Invoke-TFSRepositorySync
 {
-    Param([Parameter(Mandatory=$true)][String] $CollectionName)
+    Param([Parameter(Mandatory=$true)][String] $ProjectName)
     
     Write-Verbose -Message "Starting [$WorkflowCommandName]"
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
@@ -20,22 +22,22 @@ Workflow Invoke-TFSRepositorySync
     $SMACred = Get-AutomationPSCredential -Name $CIVariables.SMACredName
     Try
     {
-        $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$CollectionName"
+        $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$ProjectName"
         Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 
         $TFSChangeJSON = Find-TFSChange -TFSserver $($RepositoryInformation.TFSserver) `
                                         -Collection $RepositoryInformation.Collection `
-                                        -CurrentChangesetID $RepositoryInformation.CurrentChangesetID
-										-Branch $RepositoryInformation.Branch
-										-TFSSourcePath $RepositoryInformation.TFSSourcePath
+                                        -LastChangesetID $RepositoryInformation.CurrentChangesetID `
+										-Branch $RepositoryInformation.Branch `
+										-TFSSourcePath $RepositoryInformation.TFSSourcePath `
 										-RunBookFolder $RepositoryInformation.RunbookFolder
         
-        $TFSChange = ConvertFrom-JSON -InputObject $TFSChangeJSON
-        
+        $TFSChange = ConvertFrom-JSON -InputObject $TFSChangeJSON 
+        Write-Debug -Message "Invoke-TFSRepositorySync: Return from Find-TFSChange with number of updates to process: $($TFSChange.NumberOfItemsUpdated)"
 		
         if($TFSChange.NumberOfItemsUpdated -gt 0)
         {
-            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentChangesetID)..$($TFSChange.ChangesetID)]"
+            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentChangesetID)..$($TFSChange.LatestChangesetId)]"
             
             $ProcessedWorkflows = @()
             $ProcessedSettingsFiles = @()
@@ -67,19 +69,30 @@ Workflow Invoke-TFSRepositorySync
                                     }
                                     Default
                                     {
-                                        $TagLine = "ChangesetID:$($TFSChange.ChangesetID);"
+                                        Write-Debug -Message "ChangesetID of file: $($File.ChangesetID)"
+                                        $TagLine = "ChangesetID:$($File.ChangesetID)"
+                                        Write-Debug -Message "All Runbook files: $($TFSChange.RunbookFiles)"
                                         $Runbooks = $TFSChange.RunbookFiles
-										$FileToUpdate = $File.FullPath
-                                        # TODO : Better error handling
+										Write-Debug -Message "Runbook file name: $($File.FullPath)"
+                                        $FileToUpdate = $File.FullPath
+                                        
+                                        # Error handling: record all errors and let workflow make decision of how to procede 
                                         # NOTE: SMACred must have access to read files in local git folder
-                                        # NOTE: To make processing faster add logic to save referance list for Runbooks to SMA variabel
+                                        # NOTE: To make processing faster add logic to save referance list generated calling Import-VCSRunbooks each time
                                         InlineScript {
                                             Import-VCSRunbooks -wfToUpdateList $Using:FileToUpdate `
                                                                -wfAllList $Using:Runbooks -Tag $Using:TagLine `
                                                                -WebServiceEndpoint $Using:WebServiceEndpoint `
-															   -Port $Using:Port
+															   -Port $Using:Port `
+                                                               -ErrorAction Continue
                                                                
-                                        } -PSCredential $SMACred -PSRequiredModules "SMAContinuousIntegrationModule"
+                                        } -PSCredential $SMACred -PSRequiredModules "SMAContinuousIntegrationModule" -PSError $inlError -ErrorAction Continue
+                                        # All errors detected during inlinescript run is in error variable
+                                        # TODO: Find out how workflow should react to errors in inlinescript
+                                        If($inlError) {
+                                            Write-Exception -Stream Error -Exception $inlError
+                                            $inlError = $Null
+                                        }
                                     }
                                 }
                             }
@@ -102,7 +115,7 @@ Workflow Invoke-TFSRepositorySync
                                     Default
                                     {
                                         Publish-SMASettingsFileChange -FilePath $File.FullPath `
-                                                                      -CurrentChangesetID $TFSChange.CurrentChangesetID `
+                                                                      -CurrentChangesetID $TFSChange.LatestChangesetId `
                                                                       -RepositoryName $RepositoryName
                                     }
                                 }
@@ -168,14 +181,17 @@ Workflow Invoke-TFSRepositorySync
             
             $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
                                                                                       -Path $Path `
-                                                                                      -Commit $TFSChange.CurrentChangesetID
+                                                                                      -Commit $TFSChange.LatestChangesetId
             Set-SmaVariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
                             -Value $UpdatedRepositoryInformation `
                             -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
                             -Port $CIVariables.WebservicePort `
                             -Credential $SMACred
 
-            Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentChangesetID)..$($TFSChange.CurrentChangesetID)]"
+            Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentChangesetID)..$($TFSChange.LatestChangesetId)]"
+        }
+        Else {
+                Write-Verbose -Message "No updates found in TFS"
         }
     }
     Catch

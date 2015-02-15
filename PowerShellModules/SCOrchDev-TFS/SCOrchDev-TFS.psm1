@@ -5,7 +5,7 @@
 		[Parameter(Mandatory=$true) ]$Collection, 
 		[Parameter(Mandatory=$true) ]$TFSTFSSourcePath, 
 		[Parameter(Mandatory=$true) ]$Branch, 
-		[Parameter(Mandatory=$true) ]$CurrentChangesetID,
+		[Parameter(Mandatory=$true) ]$LastChangesetID,
 		[Parameter(Mandatory=$true) ]$RunBookFolder
 		)
         # Build the TFS Location (server and collection)
@@ -16,13 +16,14 @@
         $TFSRoot   = [System.String]::Empty
 		$ReturnObj = @{ 
 						'NumberOfItemsUpdated' = 0;
-						'RunbookFiles' = @();
+						'LatestChangesetId' = 0;
+                        'RunbookFiles' = @();
                         'UpdatedFiles' = @() 
 					}
 		
         Try
         {
-            # Load the necessary assemblies for interacting with TFS
+            # Load the necessary assemblies for interacting with TFS, VS Team Explorer or similar must be installed on SMA server for this to work
             $VClient  = [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.VersionControl.Client")
             $TFClient = [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.TeamFoundation.Client")
     
@@ -30,6 +31,9 @@
             $regProjCollection     = [Microsoft.TeamFoundation.Client.RegisteredTfsConnections]::GetProjectCollection($TFSServerCollection)
             $tfsTeamProjCollection = [Microsoft.TeamFoundation.Client.TfsTeamProjectCollectionFactory]::GetTeamProjectCollection($regProjCollection)
             $vcs                   = $tfsTeamProjCollection.GetService([Type]"Microsoft.TeamFoundation.VersionControl.Client.VersionControlServer")
+
+            # Get the latest changeset ID from TFS
+            $ReturnObj.LatestChangesetId = [int]($vcs.GetLatestChangesetId())
 
             # Setting up your workspace and source path you are managing
             $vcsWorkspace = $vcs.GetWorkspace($TFSSourcePath)
@@ -52,7 +56,7 @@
 					$BranchFolder = ($BranchFolder.Split('/'))[-2]
                     Write-Debug -Message "Processing item: $($item.ServerItem)"
 					Write-Debug -Message "Processing Branchfolder: $($BranchFolder)"
-                    Write-Debug -Message "Matching with environment Branchfolder config variable: $($Branch)"
+                    Write-Debug -Message "Filtering non branch folders not containing name: $($Branch)"
                     
                     If($BranchFolder -eq ($Branch.ToLower()))
                     {
@@ -69,20 +73,20 @@
                             $FileExtension = $ServerItem.Split('.')
                             $FileExtension = ($FileExtension[-1]).ToLower()
 							
-                            # Build list of all ps1 files in TFS folder, use for building workflow dependencies later
+                            # Build list of all ps1 files in TFS folder filtered for files only in Runbook folder, use for building workflow dependencies later
                             If(($FileExtension -eq "ps1") -and ($ServerPath -like $RunBookFolder)) {
                                 # Create file list of all ps1 files in TFS folder Runbook
                                 $ReturnObj.RunbookFiles += $ServerPath
                             }
                             
-                            If($item.ChangesetID -gt $CurrentChangesetID)
+                            If($item.ChangesetID -gt $LastChangesetID)
                             {
-                                Write-Debug -Message  "Found item with higher changeset ID, old: $ChangesetID new: $CurrentChangesetID"
+                                Write-Debug -Message  "Found item with higher changeset ID, old: $LastChangesetID new: $ChangesetID"
 
 								$ReturnObj.NumberOfItemsUpdated += 1
 								$ReturnObj.UpdatedFiles += @{ 	
 																'FullPath' = $ServerPath;
-																'FileName' = $ServerPath.Split('\')[-1]
+																'FileName' = $ServerPath.Split('\')[-1];
 																'FileExtension' = $FileExtension;
 																'ChangesetID' = $ChangesetID
 															}
@@ -91,10 +95,13 @@
                     }
                 }
             }
+            Else {
+                Write-Debug -Message "No updates detected"
+            }
         }
         Catch { 
                 Write-Exception -Stream Error -Exception $_
              }
-        Write-Verbose -Message "Number of TFS items found to update: $($ReturnObj.NumberOfItemsUpdated)"
+        Write-Verbose -Message "Number of files in TFS altered: $($ReturnObj.NumberOfItemsUpdated)"
         Return (ConvertTo-Json -InputObject $ReturnObj)
 }

@@ -68,7 +68,7 @@ Workflow Invoke-GitRepositorySync
                                     }
                                     Default
                                     {
-                                        $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit);"
+                                        $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
                                         $RunbookPath = $File.FullPath
                                         # TODO : Better error handling
                                         # NOTE: SMACred must have access to read files in local git folder
