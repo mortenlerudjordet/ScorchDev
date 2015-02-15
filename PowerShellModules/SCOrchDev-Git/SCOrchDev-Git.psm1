@@ -21,7 +21,7 @@ Function Find-GitRepoChange
     {
         Throw-Exception -Type 'GitTargetBranchNotFound' `
                         -Message 'git could not find any current branch' `
-                        -Property @{ 'result' = $(git branch) ;
+                        -Property @{ 'result' = $(git branch);
                                      'match'  = "$(git branch)" -match '\*\s(\w+)'}
     }
 
@@ -63,7 +63,7 @@ Function Find-GitRepoChange
     }
     $NewCommit = (git rev-parse --short HEAD)
     $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $CurrentCommit, $null -FilterScript { $_ -ne -1 }) $NewCommit
-    $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() }
+    $ReturnObj = @{ 'CurrentCommit' = $NewCommit; 'Files' = @() }
     Foreach($File in $ModifiedFiles)
     {
         if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
@@ -71,7 +71,8 @@ Function Find-GitRepoChange
             $ReturnObj.Files += @{ 'FullPath' = "$($Path)\$($Matches[2].Replace('/','\'))";
                                    'FileName' = $Matches[3];
                                    'FileExtension' = $Matches[4].ToLower();
-                                   'ChangeType' = $Matches[1] }
+                                   'ChangeType' = $Matches[1] 
+								}
         }
     }
     
