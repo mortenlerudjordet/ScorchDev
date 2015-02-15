@@ -1,12 +1,24 @@
 ﻿Function Find-TFSChange
     {
         Param(
-		[Parameter(Mandatory=$true) ]$TFSServer, 
-		[Parameter(Mandatory=$true) ]$Collection, 
-		[Parameter(Mandatory=$true) ]$TFSTFSSourcePath, 
-		[Parameter(Mandatory=$true) ]$Branch, 
-		[Parameter(Mandatory=$true) ]$LastChangesetID,
-		[Parameter(Mandatory=$true) ]$RunBookFolder
+		[Parameter(Mandatory=$true)]
+        [string]
+        $TFSServer, 
+		[Parameter(Mandatory=$true)]
+        [string]
+        $Collection, 
+		[Parameter(Mandatory=$true)]
+        [string] 
+        $TFSSourcePath, 
+		[Parameter(Mandatory=$true)]
+        [string] 
+        $Branch, 
+		[Parameter(Mandatory=$true)]
+        [string] 
+        $LastChangesetID,
+		[Parameter(Mandatory=$true)]
+        [string] 
+        $RunBookFolder
 		)
         # Build the TFS Location (server and collection)
         
@@ -14,11 +26,11 @@
         Write-Verbose -Message "Updating TFS Workspace $TFSServerCollection"
 
         $TFSRoot   = [System.String]::Empty
-		$ReturnObj = @{ 
+		$ReturnObj = @{
 						'NumberOfItemsUpdated' = 0;
 						'LatestChangesetId' = 0;
                         'RunbookFiles' = @();
-                        'UpdatedFiles' = @() 
+                        'UpdatedFiles' = @()
 					}
 		
         Try
@@ -82,7 +94,6 @@
                             If($item.ChangesetID -gt $LastChangesetID)
                             {
                                 Write-Debug -Message  "Found item with higher changeset ID, old: $LastChangesetID new: $ChangesetID"
-
 								$ReturnObj.NumberOfItemsUpdated += 1
 								$ReturnObj.UpdatedFiles += @{ 	
 																'FullPath' = $ServerPath;
@@ -99,9 +110,9 @@
                 Write-Debug -Message "No updates detected"
             }
         }
-        Catch { 
+        Catch {
                 Write-Exception -Stream Error -Exception $_
-             }
+        }
         Write-Verbose -Message "Number of files in TFS altered: $($ReturnObj.NumberOfItemsUpdated)"
         Return (ConvertTo-Json -InputObject $ReturnObj)
 }

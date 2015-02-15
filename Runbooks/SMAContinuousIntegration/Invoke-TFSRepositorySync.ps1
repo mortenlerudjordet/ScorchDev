@@ -46,12 +46,12 @@ Workflow Invoke-TFSRepositorySync
             $CleanupOrphanRunbooks = $False
             $CleanupOrphanAssets = $False
             
-            # Only Process the file 1 time per set. Sort by change type so Adds get
             # Priority over deletes. Sorts .ps1 files before .json files
             Foreach($File in ($TFSChange.UpdatedFiles | Sort-Object -Property FileExtension -Descending))
             {
                 Write-Verbose -Message "[$($File.FileName)] Starting Processing"
                 # Process files in the runbooks folder
+                Write-Debug -Message "Runbooks path: $($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)"
                 if($File.FullPath -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
                 {
                     Switch -CaseSensitive ($File.FileExtension)
@@ -86,7 +86,7 @@ Workflow Invoke-TFSRepositorySync
 															   -Port $Using:Port `
                                                                -ErrorAction Continue
                                                                
-                                        } -PSCredential $SMACred -PSRequiredModules "SMAContinuousIntegrationModule" -PSError $inlError -ErrorAction Continue
+                                        } -PSCredential $SMACred -PSRequiredModules 'SMAContinuousIntegrationModule' -PSError $inlError -ErrorAction Continue
                                         # All errors detected during inlinescript run is in error variable
                                         # TODO: Find out how workflow should react to errors in inlinescript
                                         If($inlError) {
