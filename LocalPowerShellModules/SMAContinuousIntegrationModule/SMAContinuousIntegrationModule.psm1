@@ -60,10 +60,10 @@ Function Import-VCSRunbooks
     Else {
         [System.Object]$ToProcessList = ($wfs | Select-Object -Property FullName,BaseName)
     }
-    $Global:wfReferenceList = New-Object  傍ypeName System.Collections.ArrayList
-	$Global:DoneProcessList = New-Object  傍ypeName System.Collections.ArrayList
-	$Global:wfDependancyList = New-Object 傍ypeName System.Collections.ArrayList
-	$AllwfDependancyList = New-Object     傍ypeName System.Collections.ArrayList
+    $Global:wfReferenceList = New-Object  -TypeName System.Collections.ArrayList
+	$Global:DoneProcessList = New-Object  -TypeName System.Collections.ArrayList
+	$Global:wfDependancyList = New-Object -TypeName System.Collections.ArrayList
+	$AllwfDependancyList = New-Object     -TypeName System.Collections.ArrayList
     
     # Build reference tree for all workflows in soruce control
 	Write-Debug -Message "Import-VCSRunbooks: Starting building reference list"
@@ -89,14 +89,14 @@ Function Import-VCSRunbooks
     foreach ($wf in $ToProcessList)
     {
 			
-		$RunbookDep = New-Object 傍ypeName PSObject 鳳roperty (@{
+		$RunbookDep = New-Object -TypeName PSObject -Property (@{
         'RunbookName' = "";
 		'FullName' = "";
-        'RunbookDependencies' = @();
+        'RunbookDependencies' = @()
 		})
 		$Global:wfDependancyList = $Null
         Write-Debug -Message "Import-VCSRunbooks: wfDependancyList: $($Global:wfDependancyList)"
-		$Global:wfDependancyList = New-Object System.Collections.ArrayList
+		$Global:wfDependancyList = New-Object -TypeName System.Collections.ArrayList
 		Write-Debug -Message "Import-VCSRunbooks: Runbook FullName: $($wf.FullName)"
 		$RunbookDep.FullName = $wf.FullName
 		Write-Debug -Message "Import-VCSRunbooks: Runbook BaseName: $($wf.BaseName)"
@@ -123,12 +123,9 @@ Function Import-VCSRunbooks
         $RunbookDep = $Null
     }
 	
-	# Publish workflows in reversed order
-	#Write-Debug -Message "Import-VCSRunbooks: Reversing order of Global:wfDependancyList"
-	#[array]::Reverse($AllwfDependancyList)
 	ForEach($wf in $AllwfDependancyList) {
         $DoneProcessList = $null
-        $DoneProcessList = New-Object System.Collections.ArrayList
+        $DoneProcessList = New-Object -TypeName System.Collections.ArrayList
         Write-Verbose -Message "Publishing Runbook --> $($wf.RunbookName)"
         Write-Debug -Message "Import-VCSRunbooks: Processing $($wf.RunbookName)"
         # Publish original updated workflow if not already published
@@ -261,7 +258,7 @@ Function Get-RunbookReferences
     $TokenizedWF = [System.Management.Automation.PSParser]::Tokenize($ThisWfSB,[ref]$null)
     $referencedCommands = $TokenizedWF | where {$_.Type -eq "Command"} | Select-Object -ExpandProperty "Content"
     
-	$RbRefs = New-Object 傍ypeName PSObject 鳳roperty (@{
+	$RbRefs = New-Object -TypeName PSObject -Property (@{
         'RunbookName' = "";
 		'FullName' = "";
         'ReferencedRunbooks' = @();
