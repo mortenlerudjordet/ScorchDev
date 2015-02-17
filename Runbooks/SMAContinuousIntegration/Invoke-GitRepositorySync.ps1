@@ -78,7 +78,7 @@ Workflow Invoke-GitRepositorySync
                                                                -wfAllList $Using:RepoAllWFs -Tag $Using:TagLine `
                                                                -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
                                                                
-                                        } -PSCredential $SMACred -PSRequiredModules 'SMAContinuousIntegrationModule' -PSError $inlError -ErrorAction Continue
+                                        } -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
                                         # All errors detected during inlinescript run is in error variable
                                         # TODO: Find out how workflow should react to errors in inlinescript
                                         If($inlError) {

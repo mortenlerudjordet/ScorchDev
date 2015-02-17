@@ -80,13 +80,14 @@ Workflow Invoke-TFSRepositorySync
                                         # NOTE: SMACred must have access to read files in local git folder
                                         # NOTE: To make processing faster add logic to save referance list generated calling Import-VCSRunbooks each time
                                         InlineScript {
-                                            Import-VCSRunbooks -wfToUpdateList $Using:FileToUpdate `
+                                            #Import-Module -Name 'SMARunbooksImportSDK'
+											Import-VCSRunbooks -wfToUpdateList $Using:FileToUpdate `
                                                                -wfAllList $Using:Runbooks -Tag $Using:TagLine `
                                                                -WebServiceEndpoint $Using:WebServiceEndpoint `
 															   -Port $Using:Port `
                                                                -ErrorAction Continue
                                                                
-                                        } -PSCredential $SMACred -PSRequiredModules 'SMAContinuousIntegrationModule' -PSError $inlError -ErrorAction Continue
+                                        } -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
                                         # All errors detected during inlinescript run is in error variable
                                         # TODO: Find out how workflow should react to errors in inlinescript
                                         If($inlError) {
