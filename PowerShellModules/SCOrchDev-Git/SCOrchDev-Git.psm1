@@ -76,7 +76,7 @@ Function Find-GitRepoChange
         }
     }
     
-    return (ConvertTo-Json -InputObject $ReturnObj)
+    return (ConvertTo-Json -InputObject $ReturnObj -Compress)
 }
 <#
     .Synopsis
@@ -107,6 +107,6 @@ Function Get-GitRepoWFs {
     Where-Object -FilterScript {$_.Directory -match $RunBookFolder} | 
     Select-Object -ExpandProperty FullName
     
-    Return (ConvertTo-Json $LocalPSFiles)
+    Return (ConvertTo-Json $LocalPSFiles -Compress)
 }
 Export-ModuleMember -Function * -Verbose:$false

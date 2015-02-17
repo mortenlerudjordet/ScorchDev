@@ -114,5 +114,6 @@
                 Write-Exception -Stream Error -Exception $_
         }
         Write-Verbose -Message "Number of files in TFS altered: $($ReturnObj.NumberOfItemsUpdated)"
-        Return (ConvertTo-Json -InputObject $ReturnObj)
+        # Use compress to handle higher content volume, in some instances errors are thrown when converting back from JSON
+        Return (ConvertTo-Json -InputObject $ReturnObj -Compress)
 }
