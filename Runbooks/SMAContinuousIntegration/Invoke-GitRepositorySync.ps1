@@ -44,9 +44,9 @@ Workflow Invoke-GitRepositorySync
             
             $CleanupOrphanRunbooks = $False
             $CleanupOrphanAssets = $False
-            
-            # Only Process the file 1 time per set. Sort by change type so Adds get
-            # Priority over deletes. Sorts .ps1 files before .json files
+
+            # Only Process the file 1 time per set. Sort .ps1 files before .json files
+
             Foreach($File in ($RepoChange.Files | Sort-Object ChangeType |Sort-Object FileExtension -Descending))
             {
                 Write-Verbose -Message "[$($File.FileName)] Starting Processing"
@@ -163,12 +163,11 @@ Workflow Invoke-GitRepositorySync
 
             if($CleanupOrphanRunbooks)
             {
-                #Remove-OrphanRunbook
+                Remove-SmaOrphanRunbook -RepositoryName $RepositoryName
             }
             if($CleanupOrphanAssets)
             {
-                #Remove-OrphanVariable
-                #Remove-OrphanSchedule
+                Remove-SmaOrphanAsset -RepositoryName $RepositoryName
             }
             
             $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
