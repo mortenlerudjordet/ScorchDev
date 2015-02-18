@@ -23,19 +23,10 @@ Workflow Invoke-GitRepositorySync
         $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$RepositoryName"
         Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 
-<<<<<<< HEAD
-        $RepoChangeJSON = Find-GitRepoChange -Path $($RepositoryInformation.Path) `
-                                             -Branch $RepositoryInformation.Branch `
-                                             -CurrentCommit $RepositoryInformation.CurrentCommit
+        $RepoChangeJSON = Find-GitRepoChange -RepositoryInformation $RepositoryInformation		
         # Get all workflows in current repo set
-        $RepoAllWFsJSON = Get-GitRepoWFs -Path $($RepositoryInformation.Path) `
-                                         -Branch $RepositoryInformation.Branch `
-                                         -RunBookFolder $RepositoryInformation.RunbookFolder
+        $RepoAllWFsJSON = Get-GitRepoWFs -RepositoryInformation $RepositoryInformation
         
-=======
-        $RepoChangeJSON = Find-GitRepoChange -RepositoryInformation $RepositoryInformation
-
->>>>>>> upstream/Dev
         $RepoChange = ConvertFrom-JSON -InputObject $RepoChangeJSON
         $RepoAllWFs = ConvertFrom-JSON -InputObject $RepoAllWFsJSON
 
