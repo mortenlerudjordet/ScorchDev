@@ -1,20 +1,22 @@
 ﻿<#
     .Synopsis
         Check the target Git Repo / Branch for any updated files. 
-        Ingores files in the root        
+        Ingores files in the root
+    
+    .Parameter RepositoryInformation
+        The PSCustomObject containing repository information
 #>
 Function Find-GitRepoChange
 {
-    Param([Parameter(Mandatory=$true) ] $Path,
-          [Parameter(Mandatory=$true) ] $Branch,
-          [Parameter(Mandatory=$true) ] $CurrentCommit)
+    Param([Parameter(Mandatory=$true) ] $RepositoryInformation)
     
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
     # Set current directory to the git repo location
-    Set-Location -Path $Path
+
+    Set-Location $RepositoryInformation.Path
       
-    $ReturnObj = @{ 'CurrentCommit' = $CurrentCommit;
+    $ReturnObj = @{ 'CurrentCommit' = $RepositoryInformation.CurrentCommit;
                     'Files' = @() }
 
     if(-not ("$(git branch)" -match '\*\s(\w+)'))
@@ -24,13 +26,12 @@ Function Find-GitRepoChange
                         -Property @{ 'result' = $(git branch);
                                      'match'  = "$(git branch)" -match '\*\s(\w+)'}
     }
-
-    if($Matches[1] -ne $Branch)
+    if($Matches[1] -ne $RepositoryInformation.Branch)
     {
-        Write-Verbose -Message "Setting current branch to [$Branch]"
+        Write-Verbose -Message "Setting current branch to [$($RepositoryInformation.Branch)]"
         try
         {
-            git checkout $Branch | Out-Null
+            git checkout $RepositoryInformation.Branch | Out-Null
         }
         catch
         {
@@ -62,8 +63,10 @@ Function Find-GitRepoChange
         }
     }
     $NewCommit = (git rev-parse --short HEAD)
-    $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $CurrentCommit, $null -FilterScript { $_ -ne -1 }) $NewCommit
-    $ReturnObj = @{ 'CurrentCommit' = $NewCommit; 'Files' = @() }
+
+    $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $RepositoryInformation.CurrentCommit, $null -FilterScript { $_ -ne -1 }) $NewCommit
+    $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() }
+	
     Foreach($File in $ModifiedFiles)
     {
         if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
@@ -83,17 +86,14 @@ Function Find-GitRepoChange
         Get all workflows (in Runbooks folder) in a set from the target Git Repo / Branch
 #>
 Function Get-GitRepoWFs {
-    Param([Parameter(Mandatory=$true) ] $Path,
-          [Parameter(Mandatory=$true) ] $Branch,
-          [Parameter(Mandatory=$true) ] $RunBookFolder
-          )
+	Param([Parameter(Mandatory=$true) ] $RepositoryInformation)
     
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
     # Set current directory to the git repo location
-    Set-Location -Path $Path
+    Set-Location -Path $RepositoryInformation.Path
       
-    $AllLocalPSFiles = New-Object –TypeName System.Collections.ArrayList
+    $ReturnObj = New-Object –TypeName System.Collections.ArrayList
 
     if(-not ("$(git branch)" -match '\*\s(\w+)'))
     {
@@ -103,10 +103,10 @@ Function Get-GitRepoWFs {
                                      'match'  = "$(git branch)" -match '\*\s(\w+)'}
     }
     # Assumption : Only workflows in the Runbooks folder matter for hindering nesting breakage in SMA
-    $AllLocalPSFiles = Get-ChildItem -Path $Path -Filter "*.ps1" -Recurse:$True -File:$True | 
-    Where-Object -FilterScript {$_.Directory -match $RunBookFolder} | 
+    $ReturnObj = Get-ChildItem -Path $RepositoryInformation.Path -Filter "*.ps1" -Recurse:$True -File:$True | 
+    Where-Object -FilterScript {$_.Directory -match $RepositoryInformation.RunBookFolder} | 
     Select-Object -ExpandProperty FullName
-    
-    Return (ConvertTo-Json $LocalPSFiles -Compress)
+
+    return (ConvertTo-Json $ReturnObj -Compress)
 }
 Export-ModuleMember -Function * -Verbose:$false

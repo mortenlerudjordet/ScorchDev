@@ -23,6 +23,7 @@ Workflow Invoke-GitRepositorySync
         $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$RepositoryName"
         Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 
+<<<<<<< HEAD
         $RepoChangeJSON = Find-GitRepoChange -Path $($RepositoryInformation.Path) `
                                              -Branch $RepositoryInformation.Branch `
                                              -CurrentCommit $RepositoryInformation.CurrentCommit
@@ -31,6 +32,10 @@ Workflow Invoke-GitRepositorySync
                                          -Branch $RepositoryInformation.Branch `
                                          -RunBookFolder $RepositoryInformation.RunbookFolder
         
+=======
+        $RepoChangeJSON = Find-GitRepoChange -RepositoryInformation $RepositoryInformation
+
+>>>>>>> upstream/Dev
         $RepoChange = ConvertFrom-JSON -InputObject $RepoChangeJSON
         $RepoAllWFs = ConvertFrom-JSON -InputObject $RepoAllWFsJSON
 
@@ -143,6 +148,8 @@ Workflow Invoke-GitRepositorySync
                                     }
                                     Default
                                     {
+                                        Publish-SmaPowerShellModule -ModuleDefinitionFilePath $File.FullName `
+                                                                    -RepositoryName $RepositoryName
                                     }
                                 }
                             }
