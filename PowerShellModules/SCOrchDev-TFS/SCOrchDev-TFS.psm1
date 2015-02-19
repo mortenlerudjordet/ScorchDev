@@ -15,7 +15,7 @@ Function Find-TFSChange
 		$RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
 		# Build the TFS Location (server and collection)
         
-        $TFSServerCollection = $RepositoryInformation.TFSServer + "\" + $RepositoryInformation.Collection
+        $TFSServerCollection = $RepositoryInformation.RepositoryPath
         Write-Verbose -Message "Updating TFS Workspace $TFSServerCollection"
 
         $TFSRoot   = [System.String]::Empty

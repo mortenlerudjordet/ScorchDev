@@ -34,8 +34,7 @@ Workflow Invoke-GitRepositorySync
             Update-GitRepository -RepositoryInformation $RepositoryInformation
         } -PSComputerName $RunbookWorker -PSCredential $SMACred
 
-        $RepositoryChange = ConvertFrom-JSON ( Find-GitRepositoryChange -RepositoryInformation (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
-		$RepositoryAllWFs = ConvertFrom-JSON ( Get-GitRepositoryWFs -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
+        $RepositoryChange = ConvertFrom-JSON -InputObject ( Find-GitRepositoryChange -RepositoryInformation (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
 		
         if($RepositoryChange.CurrentCommit -ne $RepositoryInformation.CurrentCommit)
         {
@@ -46,13 +45,14 @@ Workflow Invoke-GitRepositorySync
             {
                 Write-Verbose -Message "[$($RunbookFilePath)] Starting Processing"
                  $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
-				$RunbookPath = $File.FullPath
+				$RunbookFile = $File.FullPath
+				$AllRunbooksFiles = $RepositoryChange.AllRunbookFiles
 				# NOTE: SMACred must have access to read files in local git folder
 				# NOTE: To make processing faster add logic to save reference list for Runbooks to SMA variable
 				InlineScript {
 					#Import-Module -Name 'SMARunbooksImportSDK'
-					Import-VCSRunbooks -wfToUpdateList $Using:RunbookPath `
-									   -wfAllList $Using:RepoAllWFs -Tag $Using:TagLine `
+					Import-VCSRunbooks -wfToUpdateList $Using:RunbookFile `
+									   -wfAllList $Using:AllRunbooksFiles -Tag $Using:TagLine `
 									   -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
 									   
 				} -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
