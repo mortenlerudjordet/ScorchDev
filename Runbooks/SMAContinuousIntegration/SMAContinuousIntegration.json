@@ -15,21 +15,26 @@
                                                                          "Description":  "",
                                                                          "Value":  5
                                                                      },
-                      "SMAContinuousIntegration-RepositoryInformation":  "{\r\n    \"ContinuousIntegrationProject\":  {\r\n                                         \"Path\":  \"G:\\\\Git\\\\ScorchDev\",\r\n                                         \"RepositoryPath\":  \"https://github.com/mortenlerudjordet/ScorchDev.git\",\r\n                                         \"RunbookFolder\":  \"Runbooks\",\r\n                                         \"PowerShellModuleFolder\":  \"PowerShellModules\",\r\n                                         \"CurrentCommit\":  \"-1\",\r\n                                         \"Branch\":  \"Dev\"\r\n                                     },\r\n    \"TestProject\":  {\r\n                        \"Path\":  \"C:\\\\git2\\\\ScorchDev\",\r\n                        \"RepositoryPath\":  \"https://github.com/randorfer/ScorchDev.git\",\r\n                        \"RunbookFolder\":  \"Runbooks\",\r\n                        \"PowerShellModuleFolder\":  \"PowerShellModules\",\r\n                        \"CurrentCommit\":  \"-1\",\r\n                        \"Branch\":  \"Dev\"\r\n                    }\r\n}",
+                      "SMAContinuousIntegration-RepositoryInformation":  {
+                                                                             "isEncrypted":  false,
+                                                                             "Description":  "",
+                                                                             "Type":  "String",
+                                                                             "Value":  "{\r\n    \"ContinuousIntegrationProject\":  {\r\n                                         \"Path\":  \"C:\\\\git\\\\ScorchDev\",\r\n                                         \"RepositoryPath\":  \"https://github.com/randorfer/ScorchDev.git\",\r\n                                         \"RunbookFolder\":  \"Runbooks\",\r\n                                         \"PowerShellModuleFolder\":  \"PowerShellModules\",\r\n                                         \"CurrentCommit\":  \"-1\",\r\n                                         \"Branch\":  \"Dev\"\r\n                                     },\r\n    \"TestProject\":  {\r\n                        \"Path\":  \"C:\\\\git2\\\\ScorchDev\",\r\n                        \"RepositoryPath\":  \"https://github.com/randorfer/ScorchDev.git\",\r\n                        \"RunbookFolder\":  \"Runbooks\",\r\n                        \"PowerShellModuleFolder\":  \"PowerShellModules\",\r\n                        \"CurrentCommit\":  \"-1\",\r\n                        \"Branch\":  \"Dev\"\r\n                    }\r\n}"
+                                                                         },
                       "SMAContinuousIntegration-SMACredName":  {
                                                                    "isEncrypted":  false,
                                                                    "Description":  "",
-                                                                   "Value":  "lerun\\SMAAdmin"
+                                                                   "Value":  "SCOrchDev\\SMA"
                                                                },
                       "SMAContinuousIntegration-WebserviceEndpoint":  {
                                                                           "isEncrypted":  false,
                                                                           "Description":  "",
-                                                                          "Value":  "https://SMA01.lerun.info"
+                                                                          "Value":  "https://scorchsma01.scorchdev.com"
                                                                       },
                       "SMAContinuousIntegration-WebservicePort":  {
                                                                       "isEncrypted":  false,
                                                                       "Description":  "",
-                                                                      "Value":  "443"
+                                                                      "Value":  "9090"
                                                                   }
                   },
     "Schedules":  {
