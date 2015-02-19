@@ -1,28 +1,21 @@
-﻿Function Find-TFSChange
-    {
-        Param(
-		[Parameter(Mandatory=$true)]
-        [string]
-        $TFSServer, 
-		[Parameter(Mandatory=$true)]
-        [string]
-        $Collection, 
-		[Parameter(Mandatory=$true)]
-        [string] 
-        $TFSSourcePath, 
-		[Parameter(Mandatory=$true)]
-        [string] 
-        $Branch, 
-		[Parameter(Mandatory=$true)]
-        [string] 
-        $LastChangesetID,
-		[Parameter(Mandatory=$true)]
-        [string] 
-        $RunBookFolder
-		)
-        # Build the TFS Location (server and collection)
+﻿<#
+    .Synopsis
+        Check the target TFS Branch for any updated files. 
+    
+    .Parameter RepositoryInformation
+        JSON string containing repository information
+#>
+Function Find-TFSChange
+{
+	Param(
+		[Parameter(Mandatory=$true) ] 
+		[string]$RepositoryInformationJSON
+	)
+        # Convert from JSON
+		$RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
+		# Build the TFS Location (server and collection)
         
-        $TFSServerCollection = $TFSServer + "\" + $Collection
+        $TFSServerCollection = $RepositoryInformation.TFSServer + "\" + $RepositoryInformation.Collection
         Write-Verbose -Message "Updating TFS Workspace $TFSServerCollection"
 
         $TFSRoot   = [System.String]::Empty
@@ -48,7 +41,7 @@
             $ReturnObj.LatestChangesetId = [int]($vcs.GetLatestChangesetId())
 
             # Setting up your workspace and source path you are managing
-            $vcsWorkspace = $vcs.GetWorkspace($TFSSourcePath)
+            $vcsWorkspace = $vcs.GetWorkspace($RepositoryInformation.TFSSourcePath)
 
             # Update the local workspace
             $changes = $vcsWorkspace.Get()
@@ -58,7 +51,7 @@
             {
                 Write-Verbose -Message "Changes Found, Processing"
                 Write-Verbose -Message "Number of changes to process: $($changes.NumUpdated)"
-                $allItems = $vcs.GetItems($TFSSourcePath,2)
+                $allItems = $vcs.GetItems($RepositoryInformation.TFSSourcePath,2)
                 $TFSRoot  = ($allItems.QueryPath).ToLower()
                 Write-Debug -Message "TFS Item Count: $($allItems.Items.Count)"
 				Write-Debug -Message "TFS Root Path: $($TFSRoot)"
@@ -68,38 +61,37 @@
 					$BranchFolder = ($BranchFolder.Split('/'))[-2]
                     Write-Debug -Message "Processing item: $($item.ServerItem)"
 					Write-Debug -Message "Processing Branchfolder: $($BranchFolder)"
-                    Write-Debug -Message "Filtering non branch folders not containing name: $($Branch)"
+                    Write-Debug -Message "Filtering non branch folders not containing name: $($RepositoryInformation.Branch)"
                     
-                    If($BranchFolder -eq ($Branch.ToLower()))
+                    If($BranchFolder -eq (($RepositoryInformation.Branch).ToLower()))
                     {
                         Write-Debug -Message  "Match found for branch folder: $($BranchFolder)"
                         If($item.ItemType -eq "File")
                         {
-                            # Find newest changeset from .ps1 and .xml
                             Write-Debug -Message  "Changeset ID: $($item.ChangesetID)"
                             $ServerItem  = $item.ServerItem
                             Write-Debug -Message "Processing item: $($ServerItem)"
-                            $ServerPath = ((($ServerItem.ToLower()).Replace($TFSRoot.ToLower(), $TFSSourcePath.ToLower())).Replace('/','\'))
+                            $ServerPath = ((($ServerItem.ToLower()).Replace($TFSRoot.ToLower(), ($RepositoryInformation.TFSSourcePath).ToLower())).Replace('/','\'))
 							Write-Debug -Message "Processing path: $($ServerPath)"
                             # Get file extension of item
                             $FileExtension = $ServerItem.Split('.')
                             $FileExtension = ($FileExtension[-1]).ToLower()
 							
                             # Build list of all ps1 files in TFS folder filtered for files only in Runbook folder, use for building workflow dependencies later
-                            If(($FileExtension -eq "ps1") -and ($ServerPath -like $RunBookFolder)) {
-                                # Create file list of all ps1 files in TFS folder Runbook
+                            If(($FileExtension -eq "ps1") -and ($ServerPath -like $RepositoryInformation.RunBookFolder)) {
+                                # Create file list of all ps1 files in TFS folder Runbooks (filtered for branch)
                                 $ReturnObj.RunbookFiles += $ServerPath
                             }
                             
-                            If($item.ChangesetID -gt $LastChangesetID)
+                            If($item.ChangesetID -gt $RepositoryInformation.LastChangesetID)
                             {
-                                Write-Debug -Message  "Found item with higher changeset ID, old: $LastChangesetID new: $ChangesetID"
+                                Write-Debug -Message  "Found item with higher changeset ID, old: $($RepositoryInformation.LastChangesetID) new: $ChangesetID"
 								$ReturnObj.NumberOfItemsUpdated += 1
 								$ReturnObj.UpdatedFiles += @{ 	
-																'FullPath' = $ServerPath;
-																'FileName' = $ServerPath.Split('\')[-1];
-																'FileExtension' = $FileExtension;
-																'ChangesetID' = $ChangesetID
+																'FullPath' 		= 	$ServerPath;
+																'FileName' 		=	$ServerPath.Split('\')[-1];
+																'FileExtension' = 	$FileExtension;
+																'ChangesetID' 	= 	$ChangesetID
 															}
                             }
                         }

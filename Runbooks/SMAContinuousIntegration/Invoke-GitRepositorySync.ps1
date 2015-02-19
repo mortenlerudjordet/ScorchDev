@@ -23,9 +23,9 @@ Workflow Invoke-GitRepositorySync
         $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$RepositoryName"
         Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 
-        $RepoChangeJSON = Find-GitRepoChange -RepositoryInformation $RepositoryInformation		
+        $RepoChangeJSON = Find-GitRepoChange -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress)
         # Get all workflows in current repo set
-        $RepoAllWFsJSON = Get-GitRepoWFs -RepositoryInformation $RepositoryInformation
+        $RepoAllWFsJSON = Get-GitRepoWFs -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress)
         
         $RepoChange = ConvertFrom-JSON -InputObject $RepoChangeJSON
         $RepoAllWFs = ConvertFrom-JSON -InputObject $RepoAllWFsJSON
@@ -66,7 +66,6 @@ Workflow Invoke-GitRepositorySync
                                     {
                                         $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
                                         $RunbookPath = $File.FullPath
-                                        # TODO : Better error handling
                                         # NOTE: SMACred must have access to read files in local git folder
                                         # NOTE: To make processing faster add logic to save reference list for Runbooks to SMA variable
                                         InlineScript {
@@ -76,10 +75,10 @@ Workflow Invoke-GitRepositorySync
                                                                -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
                                                                
                                         } -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
-                                        # All errors detected during inlinescript run is in error variable
-                                        # TODO: Find out how workflow should react to errors in inlinescript
                                         If($inlError) {
                                             Write-Exception -Stream Error -Exception $inlError
+											# Suspend workflow if error is detected
+											Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
                                             $inlError = $Null
                                         }
                                     }

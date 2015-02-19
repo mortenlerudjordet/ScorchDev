@@ -4,12 +4,17 @@
         Ingores files in the root
     
     .Parameter RepositoryInformation
-        The PSCustomObject containing repository information
+         JSON string containing repository information
 #>
 Function Find-GitRepoChange
 {
-    Param([Parameter(Mandatory=$true) ] $RepositoryInformation)
-    
+    Param(
+		[Parameter(Mandatory=$true) ] 
+		[string]
+		$RepositoryInformationJSON
+	)
+    $RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
+	
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
     # Set current directory to the git repo location
@@ -86,7 +91,12 @@ Function Find-GitRepoChange
         Get all workflows (in Runbooks folder) in a set from the target Git Repo / Branch
 #>
 Function Get-GitRepoWFs {
-	Param([Parameter(Mandatory=$true) ] $RepositoryInformation)
+	Param(
+		[Parameter(Mandatory=$true) ] 
+		[string]
+		$RepositoryInformationJSON
+	)
+    $RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
     
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     

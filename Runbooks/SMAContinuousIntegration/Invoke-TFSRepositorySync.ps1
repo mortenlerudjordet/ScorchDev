@@ -22,15 +22,12 @@ Workflow Invoke-TFSRepositorySync
     $SMACred = Get-AutomationPSCredential -Name $CIVariables.SMACredName
     Try
     {
-        $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$ProjectName"
-        Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
-
-        $TFSChangeJSON = Find-TFSChange -TFSserver $($RepositoryInformation.TFSserver) `
-                                        -Collection $RepositoryInformation.Collection `
-                                        -LastChangesetID $RepositoryInformation.CurrentChangesetID `
-										-Branch $RepositoryInformation.Branch `
-										-TFSSourcePath $RepositoryInformation.TFSSourcePath `
-										-RunBookFolder $RepositoryInformation.RunbookFolder
+        $RepositoryInformation = (ConvertFrom-Json -InputObject $CIVariables.RepositoryInformation)."$ProjectName"
+        
+		Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
+		
+		# Pass in Json version of RepositoryInformation 
+        $TFSChangeJSON = Find-TFSChange -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress)
         
         $TFSChange = ConvertFrom-JSON -InputObject $TFSChangeJSON 
         Write-Debug -Message "Invoke-TFSRepositorySync: Return from Find-TFSChange with number of updates to process: $($TFSChange.NumberOfItemsUpdated)"
@@ -76,7 +73,6 @@ Workflow Invoke-TFSRepositorySync
 										Write-Debug -Message "Runbook file name: $($File.FullPath)"
                                         $FileToUpdate = $File.FullPath
                                         
-                                        # Error handling: record all errors and let workflow make decision of how to procede 
                                         # NOTE: SMACred must have access to read files in local git folder
                                         # NOTE: To make processing faster add logic to save referance list generated calling Import-VCSRunbooks each time
                                         InlineScript {
@@ -88,10 +84,10 @@ Workflow Invoke-TFSRepositorySync
                                                                -ErrorAction Continue
                                                                
                                         } -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
-                                        # All errors detected during inlinescript run is in error variable
-                                        # TODO: Find out how workflow should react to errors in inlinescript
                                         If($inlError) {
                                             Write-Exception -Stream Error -Exception $inlError
+											# Suspend workflow if error is detected
+											Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
                                             $inlError = $Null
                                         }
                                     }
