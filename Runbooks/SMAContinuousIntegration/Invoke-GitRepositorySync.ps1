@@ -23,161 +23,79 @@ Workflow Invoke-GitRepositorySync
         $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$RepositoryName"
         Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 
-        $RepoChangeJSON = Find-GitRepoChange -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress)
-        # Get all workflows in current repo set
-        $RepoAllWFsJSON = Get-GitRepoWFs -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress)
+        $RunbookWorker = Get-SmaRunbookWorkerDeployment -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                                        -Port $CIVariables.WebservicePort `
+                                                        -Credential $SMACred
         
-        $RepoChange = ConvertFrom-JSON -InputObject $RepoChangeJSON
-        $RepoAllWFs = ConvertFrom-JSON -InputObject $RepoAllWFsJSON
-
-        if($RepoChange.CurrentCommit -ne $RepositoryInformation.CurrentCommit)
+        # Update the repository on all SMA Workers
+        InlineScript
         {
-            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($RepoChange.CurrentCommit)]"
-            
-            $ProcessedWorkflows = @()
-            $ProcessedSettingsFiles = @()
-            $ProcessedPowerShellModules = @()
-            
-            $CleanupOrphanRunbooks = $False
-            $CleanupOrphanAssets = $False
+            $RepositoryInformation = $Using:RepositoryInformation
+            Update-GitRepository -RepositoryInformation $RepositoryInformation
+        } -PSComputerName $RunbookWorker -PSCredential $SMACred
 
-            # Only Process the file 1 time per set. Sort .ps1 files before .json files
-
-            Foreach($File in ($RepoChange.Files | Sort-Object ChangeType |Sort-Object FileExtension -Descending))
+        $RepositoryChange = ConvertFrom-JSON ( Find-GitRepositoryChange -RepositoryInformation (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
+		$RepositoryAllWFs = ConvertFrom-JSON ( Get-GitRepositoryWFs -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
+		
+        if($RepositoryChange.CurrentCommit -ne $RepositoryInformation.CurrentCommit)
+        {
+            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryInformation.CurrentCommit)]"
+            
+            $ReturnInformation = ConvertFrom-JSON (Group-RepositoryFile -Files $RepositoryChange.Files -RepositoryInformation $RepositoryInformation)
+            Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
             {
-                Write-Verbose -Message "[$($File.FileName)] Starting Processing"
-                # Process files in the runbooks folder
-                if($File.FullPath -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
-                {
-                    Switch -CaseSensitive ($File.FileExtension)
-                    {
-                        '.ps1'
-                        {   
-                            if($ProcessedWorkflows -notcontains $File.FileName)
-                            {
-                                $ProcessedWorkflows += $File.FileName
-                                Switch -CaseSensitive ($File.FileExtension)
-                                {
-                                    "D"
-                                    {
-                                        $CleanupOrphanRunbooks = $True
-                                    }
-                                    Default
-                                    {
-                                        $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
-                                        $RunbookPath = $File.FullPath
-                                        # NOTE: SMACred must have access to read files in local git folder
-                                        # NOTE: To make processing faster add logic to save reference list for Runbooks to SMA variable
-                                        InlineScript {
-                                            #Import-Module -Name 'SMARunbooksImportSDK'
-											Import-VCSRunbooks -wfToUpdateList $Using:RunbookPath `
-                                                               -wfAllList $Using:RepoAllWFs -Tag $Using:TagLine `
-                                                               -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
-                                                               
-                                        } -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
-                                        If($inlError) {
-                                            Write-Exception -Stream Error -Exception $inlError
-											# Suspend workflow if error is detected
-											Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
-                                            $inlError = $Null
-                                        }
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                Write-Verbose -Message "Skipping [$(ConvertTo-Json $File)]. File already processed in changeset"
-                            }
-                        }
-                        '.json'
-                        {
-                            if($ProcessedSettingsFiles -notcontains $File.FileName)
-                            {
-                                $ProcessedSettingsFiles += $File.FileName
-                                Switch -CaseSensitive ($File.FileExtension)
-                                {
-                                    "D"
-                                    {
-                                        $CleanupOrphanAssets = $true
-                                    }
-                                    Default
-                                    {
-                                        Publish-SMASettingsFileChange -FilePath $File.FullPath `
-                                                                      -CurrentCommit $RepoChange.CurrentCommit `
-                                                                      -RepositoryName $RepositoryName
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                Write-Verbose -Message "Skipping [$(ConvertTo-Json $File)]. File already processed in changeset"
-                            }
-                        }
-                        default
-                        {
-                            Write-Verbose -Message "[$($File.FileName)] is not a supported file type for the runbooks folder (.json / .ps1). Skipping"
-                        }
-                    }
-                }
-
-                # Process files in the PowerShellModules folder
-                elseif($File.FullPath -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
-                {
-                    Switch -CaseSensitive ($File.FileExtension)
-                    {
-                        '.psd1'
-                        {
-                            if($ProcessedPowerShellModules -notcontains $File.FileName)
-                            {
-                                $ProcessedPowerShellModules += $File.FileName
-                                Switch -CaseSensitive ($File.FileExtension)
-                                {
-                                    "D"
-                                    {
-                                        # Not implemented
-                                    }
-                                    Default
-                                    {
-                                        Publish-SmaPowerShellModule -ModuleDefinitionFilePath $File.FullName `
-                                                                    -RepositoryName $RepositoryName
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                Write-Verbose -Message "Skipping [$(ConvertTo-Json $File)]. File already processed in changeset"
-                            }
-                        }
-                        default
-                        {
-                            Write-Verbose -Message "[$($File.FileName)] is not a supported file type for the PowerShellModules folder (.psd1). Skipping"
-                        }
-                    }
-                }
-                Write-Verbose -Message "[$($File.FileName)] Finished Processing"
-                Checkpoint-Workflow
-
+                Write-Verbose -Message "[$($RunbookFilePath)] Starting Processing"
+                 $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
+				$RunbookPath = $File.FullPath
+				# NOTE: SMACred must have access to read files in local git folder
+				# NOTE: To make processing faster add logic to save reference list for Runbooks to SMA variable
+				InlineScript {
+					#Import-Module -Name 'SMARunbooksImportSDK'
+					Import-VCSRunbooks -wfToUpdateList $Using:RunbookPath `
+									   -wfAllList $Using:RepoAllWFs -Tag $Using:TagLine `
+									   -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
+									   
+				} -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
+				If($inlError) {
+					Write-Exception -Stream Error -Exception $inlError
+					# Suspend workflow if error is detected
+					Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
+					$inlError = $Null
+				}
+                Write-Verbose -Message "[$($RunbookFilePath)] Finished Processing"
             }
+            Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
+            {
+                Write-Verbose -Message "[$($SettingsFilePath)] Starting Processing"
+                Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
+                                              -CurrentCommit $RepositoryChange.CurrentCommit `
+                                              -RepositoryName $RepositoryName
+                Write-Verbose -Message "[$($SettingsFilePath)] Finished Processing"
+            }
+            Checkpoint-Workflow
 
-            if($CleanupOrphanRunbooks)
+            if($ReturnInformation.CleanRunbooks)
             {
                 Remove-SmaOrphanRunbook -RepositoryName $RepositoryName
             }
-            if($CleanupOrphanAssets)
+            if($ReturnInformation.CleanAssets)
             {
                 Remove-SmaOrphanAsset -RepositoryName $RepositoryName
             }
-            
+            if($ReturnInformation.UpdatePSModules)
+            {
+                # Implement a mini version of discover all local modules
+            }
             $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
-                                                                                      -Path $Path `
-                                                                                      -Commit $RepoChange.CurrentCommit
+                                                                                      -RepositoryName $RepositoryName `
+                                                                                      -Commit $RepositoryChange.CurrentCommit
             Set-SmaVariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
                             -Value $UpdatedRepositoryInformation `
                             -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
                             -Port $CIVariables.WebservicePort `
                             -Credential $SMACred
 
-            Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentCommit)..$($RepoChange.CurrentCommit)]"
+            Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryChange.CurrentCommit)]"
         }
     }
     Catch

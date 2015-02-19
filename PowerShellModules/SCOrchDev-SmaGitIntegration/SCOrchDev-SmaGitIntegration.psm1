@@ -135,12 +135,11 @@ Function Set-SmaRepositoryInformationCommitVersion
     Param([Parameter(Mandatory=$false)][string] $RepositoryInformation,
           [Parameter(Mandatory=$false)][string] $RepositoryName,
           [Parameter(Mandatory=$false)][string] $Commit)
-
     
-    $RepositoryInformation = (ConvertFrom-JSON $RepositoryInformation)
-    $RepositoryInformation."$RepositoryName".CurrentCommit = $Commit
+    $_RepositoryInformation = (ConvertFrom-JSON $RepositoryInformation)
+    $_RepositoryInformation."$RepositoryName".CurrentCommit = $Commit
 
-    return (ConvertTo-Json $RepositoryInformation)
+    return (ConvertTo-Json $_RepositoryInformation)
 }
 Function Get-GitRepositoryWorkflowName
 {
@@ -185,15 +184,101 @@ Function Get-GitRepositoryAssetName
     
     foreach($AssetFile in $AssetFiles)
     {
-        Foreach($Variable in (Get-SmaVariablesFromFile -FilePath $AssetFile.FullName))
+        Foreach($VariableName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON (Get-SmaVariablesFromFile -FilePath $AssetFile.FullName))).Keys)
         {
-            $Assets.Variable += (ConvertFrom-Json $Variable).name
+            $Assets.Variable += $VariableName
         }
-        Foreach($Schedule in (Get-SmaSchedulesFromFile -FilePath $AssetFile.FullName))
+        Foreach($ScheduleName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON (Get-SmaSchedulesFromFile -FilePath $AssetFile.FullName))).Keys)
         {
-            $Assets.Schedule += (ConvertFrom-Json $Variable).name
+            $Assets.Schedule += $ScheduleName
         }
     }
     Return $Assets
+}
+<#
+    .Synopsis 
+        Groups all files that will be processed.
+        # TODO put logic for import order here
+        # TODO Remove duplicates
+    .Parameter Files
+        The files to sort
+    .Parameter RepositoryInformation
+#>
+Function Group-RepositoryFile
+{
+    Param([Parameter(Mandatory=$True)] $Files,
+          [Parameter(Mandatory=$True)] $RepositoryInformation)
+
+    $_Files = ConvertTo-Hashtable -InputObject $Files -KeyName FileExtension
+    $ReturnObj = @{ 'ScriptFiles' = @() ;
+                    'SettingsFiles' = @() ;
+                    'CleanRunbooks' = $False ;
+                    'CleanAssets' = $False ;
+                    'UpdatePSModules' = $False }
+
+    # Process PS1 Files
+    $PowerShellScriptFiles = ConvertTo-HashTable $_Files.'.ps1' -KeyName 'FileName'
+    foreach($ScriptName in $PowerShellScriptFiles.Keys)
+    {
+        if($PowerShellScriptFiles."$ScriptName".ChangeType -contains 'M' -or
+           $PowerShellScriptFiles."$ScriptName".ChangeType -contains 'A')
+        {
+            foreach($Path in $PowerShellScriptFiles."$ScriptName".FullPath)
+            {
+                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                {
+                    $ReturnObj.ScriptFiles += $Path
+                    break
+                }
+            }            
+        }
+        else
+        {
+            $ReturnObj.CleanRunbooks = $True
+        }
+    }
+
+    # Process Settings Files
+    $SettingsFiles = ConvertTo-HashTable $_Files.'.json' -KeyName 'FileName'
+    foreach($SettingsFileName in $SettingsFiles.Keys)
+    {
+        if($SettingsFiles."$SettingsFileName".ChangeType -contains 'M' -or
+           $SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
+        {
+            foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
+            {
+                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                {
+                    $ReturnObj.CleanAssets = $True
+                    $ReturnObj.SettingsFiles += $Path
+                    break
+                }
+            }
+        }
+        else
+        {
+            $ReturnObj.CleanAssets = $True
+        }
+    }
+
+    $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
+    foreach($PSModuleName in $PSModuleFiles.Keys)
+    {
+        if($PSModuleFiles."$PSModuleName".ChangeType -contains 'M' -or
+           $PSModuleFiles."$PSModuleName".ChangeType -contains 'A')
+        {
+            foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
+            {
+                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
+                {
+                    $ReturnObj.UpdatePSModules = $True
+                    break
+                }
+            }
+        }
+        if($ReturnObj.UpdatePSModules) { break }
+    }
+
+    Return (ConvertTo-JSON $ReturnObj)
 }
 Export-ModuleMember -Function * -Verbose:$false -Debug:$False

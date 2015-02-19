@@ -1,12 +1,45 @@
 ﻿<#
     .Synopsis
+        Get all workflows (in Runbooks folder) in a set from the target Git Repo / Branch
+#>
+Function Get-GitRepositoryWFs {
+	Param(
+		[Parameter(Mandatory=$true) ] 
+		[string]
+		$RepositoryInformationJSON
+	)
+    $RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
+    
+    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+    
+    # Set current directory to the git repo location
+    Set-Location -Path $RepositoryInformation.Path
+      
+    $ReturnObj = New-Object –TypeName System.Collections.ArrayList
+
+    if(-not ("$(git branch)" -match '\*\s(\w+)'))
+    {
+        Throw-Exception -Type 'GitTargetBranchNotFound' `
+                        -Message 'git could not find any current branch' `
+                        -Property @{ 'result' = $(git branch) ;
+                                     'match'  = "$(git branch)" -match '\*\s(\w+)'}
+    }
+    # Assumption : Only workflows in the Runbooks folder matter for hindering nesting breakage in SMA
+    $ReturnObj = Get-ChildItem -Path $RepositoryInformation.Path -Filter "*.ps1" -Recurse:$True -File:$True | 
+    Where-Object -FilterScript {$_.Directory -match $RepositoryInformation.RunBookFolder} | 
+    Select-Object -ExpandProperty FullName
+
+    return (ConvertTo-Json $ReturnObj -Compress)
+}
+<#
+    .Synopsis
         Check the target Git Repo / Branch for any updated files. 
         Ingores files in the root
     
     .Parameter RepositoryInformation
          JSON string containing repository information
 #>
-Function Find-GitRepoChange
+Function Find-GitRepositoryChange
 {
     Param(
 		[Parameter(Mandatory=$true) ] 
@@ -23,7 +56,39 @@ Function Find-GitRepoChange
       
     $ReturnObj = @{ 'CurrentCommit' = $RepositoryInformation.CurrentCommit;
                     'Files' = @() }
-
+    
+    $NewCommit = (git rev-parse --short HEAD)
+    $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $RepositoryInformation.CurrentCommit, $null -FilterScript { $_ -ne -1 }) $NewCommit
+    $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() }
+    Foreach($File in $ModifiedFiles)
+    {
+        if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
+        {
+            $ReturnObj.Files += @{ 'FullPath' = "$($RepositoryInformation.Path)\$($Matches[2].Replace('/','\'))" ;
+                                   'FileName' = $Matches[3] ;
+                                   'FileExtension' = $Matches[4].ToLower()
+                                   'ChangeType' = $Matches[1] }
+        }
+    }
+    
+    return (ConvertTo-Json $ReturnObj -Compress)
+}
+<#
+    .Synopsis
+        Updates a git repository to the latest version
+    
+    .Parameter RepositoryInformation
+        The PSCustomObject containing repository information
+#>
+Function Update-GitRepository
+{
+    Param([Parameter(Mandatory=$true) ] $RepositoryInformation)
+    
+    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+    
+    # Set current directory to the git repo location
+    Set-Location $RepositoryInformation.Path
+      
     if(-not ("$(git branch)" -match '\*\s(\w+)'))
     {
         Throw-Exception -Type 'GitTargetBranchNotFound' `
@@ -51,7 +116,6 @@ Function Find-GitRepoChange
         }
     }
 
-    
     try
     {
         $initialization = git pull
@@ -85,38 +149,5 @@ Function Find-GitRepoChange
     }
     
     return (ConvertTo-Json -InputObject $ReturnObj -Compress)
-}
-<#
-    .Synopsis
-        Get all workflows (in Runbooks folder) in a set from the target Git Repo / Branch
-#>
-Function Get-GitRepoWFs {
-	Param(
-		[Parameter(Mandatory=$true) ] 
-		[string]
-		$RepositoryInformationJSON
-	)
-    $RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
-    
-    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
-    
-    # Set current directory to the git repo location
-    Set-Location -Path $RepositoryInformation.Path
-      
-    $ReturnObj = New-Object –TypeName System.Collections.ArrayList
-
-    if(-not ("$(git branch)" -match '\*\s(\w+)'))
-    {
-        Throw-Exception -Type 'GitTargetBranchNotFound' `
-                        -Message 'git could not find any current branch' `
-                        -Property @{ 'result' = $(git branch) ;
-                                     'match'  = "$(git branch)" -match '\*\s(\w+)'}
-    }
-    # Assumption : Only workflows in the Runbooks folder matter for hindering nesting breakage in SMA
-    $ReturnObj = Get-ChildItem -Path $RepositoryInformation.Path -Filter "*.ps1" -Recurse:$True -File:$True | 
-    Where-Object -FilterScript {$_.Directory -match $RepositoryInformation.RunBookFolder} | 
-    Select-Object -ExpandProperty FullName
-
-    return (ConvertTo-Json $ReturnObj -Compress)
 }
 Export-ModuleMember -Function * -Verbose:$false
