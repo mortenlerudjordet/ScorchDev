@@ -44,7 +44,7 @@ Workflow Invoke-GitRepositorySync
             Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
             {
                 Write-Verbose -Message "[$($RunbookFilePath)] Starting Processing"
-                 $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
+                $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
 				$RunbookFile = $File.FullPath
 				$AllRunbooksFiles = $RepositoryChange.AllRunbookFiles
 				# NOTE: SMACred must have access to read files in local git folder
