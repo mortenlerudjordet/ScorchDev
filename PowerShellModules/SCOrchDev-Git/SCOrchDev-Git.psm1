@@ -8,12 +8,19 @@
 #>
 Function Find-GitRepositoryChange
 {
-    Param(
-		[Parameter(Mandatory=$true) ] 
-		[string]
-		$RepositoryInformationJSON
+	[CmdletBinding()]
+	Param (
+        [Parameter(ParameterSetName='RepositoryInformation',Mandatory=$true,HelpMessage='Please specify RepositoryInformation as an object')][Alias('Information','ri')]
+        [ValidateNotNullOrEmpty()]
+        [Object]$RepositoryInformation,
+        [Parameter(ParameterSetName='RepositoryInformationJSON',Mandatory=$true,HelpMessage='Please specify RepositoryInformation as an JSON string')][Alias('InformationJSON','rij')]
+        [ValidateNotNullOrEmpty()]
+        [String]$RepositoryInformationJSON
 	)
-    $RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
+	# IF JSON is used convert to object
+	If($RepositoryInformationJSON) {
+		$RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
+	} 
 	
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
@@ -54,7 +61,15 @@ Function Find-GitRepositoryChange
 #>
 Function Update-GitRepository
 {
-    Param([Parameter(Mandatory=$true) ] $RepositoryInformation)
+    [CmdletBinding()]
+	Param (
+        [Parameter(ParameterSetName='RepositoryInformation',Mandatory=$true,HelpMessage='Please specify RepositoryInformation as an object')][Alias('Information','ri')]
+        [ValidateNotNullOrEmpty()]
+        [Object]$RepositoryInformation,
+        [Parameter(ParameterSetName='RepositoryInformationJSON',Mandatory=$true,HelpMessage='Please specify RepositoryInformation as an JSON string')][Alias('InformationJSON','rij')]
+        [ValidateNotNullOrEmpty()]
+        [String]$RepositoryInformationJSON
+	)
     
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
