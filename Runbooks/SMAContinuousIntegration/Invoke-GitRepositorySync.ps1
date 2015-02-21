@@ -38,7 +38,7 @@ Workflow Invoke-GitRepositorySync
 		
         if($RepositoryChange.CurrentCommit -ne $RepositoryInformation.CurrentCommit)
         {
-            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryInformation.CurrentCommit)]"
+            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryChange.CurrentCommit)]"
             
             $ReturnInformation = ConvertFrom-JSON (Group-RepositoryFile -Files $RepositoryChange.Files -RepositoryInformation $RepositoryInformation)
             Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
@@ -59,7 +59,8 @@ Workflow Invoke-GitRepositorySync
 				If($inlError) {
 					Write-Exception -Stream Error -Exception $inlError
 					# Suspend workflow if error is detected
-					Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
+					# -ErrorAction Stop
+					Write-Error -Message "There where errors importing Runbooks: $inlError" 
 					$inlError = $Null
 				}
                 Write-Verbose -Message "[$($RunbookFilePath)] Finished Processing"

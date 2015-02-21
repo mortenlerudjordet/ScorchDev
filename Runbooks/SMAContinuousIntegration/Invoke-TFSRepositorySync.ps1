@@ -35,21 +35,21 @@ Workflow Invoke-TFSRepositorySync
         {
             Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentChangesetID)..$($TFSChange.LatestChangesetId)]"
             
-			$ReturnInformation = ConvertFrom-JSON (Group-RepositoryFile -Files $RepositoryChange.Files -RepositoryInformation $RepositoryInformation)
+			$ReturnInformation = ConvertFrom-JSON (Group-RepositoryFile -Files $TFSChange.Files -RepositoryInformation $RepositoryInformation)
             
 			# Priority over deletes. Sorts .ps1 files before .json files
             Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
             {
                 Write-Verbose -Message "[$($RunbookFilePath)] Starting Processing"
-				Write-Debug -Message "ChangesetID of file: $($File.ChangesetID)"
-				$TagLine = "ChangesetID:$($File.ChangesetID)"
+				Write-Debug -Message "ChangesetID of file: $($TFSChange.LatestChangesetId)"
+				$TagLine = "ChangesetID:$($TFSChange.LatestChangesetId)"
 				Write-Debug -Message "All Runbook files: $($TFSChange.RunbookFiles)"
 				$Runbooks = $TFSChange.RunbookFiles
 				Write-Debug -Message "Runbook file name: $($File.FullPath)"
 				$FileToUpdate = $RunbookFilePath
 				
 				# NOTE: SMACred must have access to read files in local git folder
-				# NOTE: To make processing faster add logic to save referance list generated calling Import-VCSRunbooks each time
+				# NOTE: To make processing faster add logic to save reference list generated calling Import-VCSRunbooks each time
 				InlineScript {
 					#Import-Module -Name 'SMARunbooksImportSDK'
 					Import-VCSRunbooks -wfToUpdateList $Using:FileToUpdate `
@@ -70,7 +70,7 @@ Workflow Invoke-TFSRepositorySync
             {
                 Write-Verbose -Message "[$($SettingsFilePath)] Starting Processing"
                 Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
-                                              -CurrentCommit $RepositoryChange.CurrentCommit `
+                                              -CurrentChangesetID $TFSChange.LatestChangesetId `
                                               -RepositoryName $RepositoryName
                 Write-Verbose -Message "[$($SettingsFilePath)] Finished Processing"
             }

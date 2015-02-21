@@ -395,7 +395,12 @@ Function Publish-Runbook
         If($Tag) {
 			Write-Debug -Message "Updating tags"
 			If($SmaRb.Tags) {
-				$Tag = $Tag + ";" + $SmaRb.Tags
+				If($Tag.EndsWith(';')) {
+					$Tag = $Tag + $SmaRb.Tags
+				}
+				Else {
+					$Tag = $Tag + ";" + $SmaRb.Tags
+				}
 			}
 			Set-SmaRunbookTags -RunbookID $SmaRb.RunbookID -Tags $Tag -WebserviceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
             If($oErr) {
