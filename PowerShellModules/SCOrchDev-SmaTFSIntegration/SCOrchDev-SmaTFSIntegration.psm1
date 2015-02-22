@@ -214,9 +214,12 @@ Function Group-RepositoryFile
     $_Files = ConvertTo-Hashtable -InputObject $Files -KeyName FileExtension
     $ReturnObj = @{ 'ScriptFiles' = @() ;
                     'SettingsFiles' = @() ;
+                    'ModuleFiles' = @() ;
+					'AutomationJSONFiles' = @() ;
+					'IntegrationModules' = @() ;
                     'CleanRunbooks' = $False ;
                     'CleanAssets' = $False ;
-                    'UpdatePSModules' = $False }
+                    'ModulesUpdated' = $False }
 
     # Process PS1 Files
     $PowerShellScriptFiles = ConvertTo-HashTable $_Files.'.ps1' -KeyName 'FileName'
@@ -261,8 +264,32 @@ Function Group-RepositoryFile
         {
             $ReturnObj.CleanAssets = $True
         }
+    }	
+	# Process Settings Files again to find automation json files
+    foreach($SettingsFileName in $SettingsFiles.Keys)
+    {
+        # Only process new json files
+		if($SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
+        {
+            foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
+            {
+                # Find Integration Module json files
+				if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
+                {
+					if($Path.Split('\')[-1] -like "*-automation.json") 
+					{
+						Write-Debug -Message "Found automation json file: $($Path.Split('\')[-1])"
+						$ReturnObj.AutomationJSONFiles += $Path
+						break
+					}
+					else {
+						Write-Debug -Message "No automation json file found"
+					}
+                }
+            }
+        }
     }
-
+		
     $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
     foreach($PSModuleName in $PSModuleFiles.Keys)
     {
@@ -271,10 +298,32 @@ Function Group-RepositoryFile
         {
             foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
             {
-                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
-                {
-                    $ReturnObj.UpdatePSModules = $True
-                    break
+                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*" )
+				{
+                    if( $ReturnObj.AutomationJSONFiles ) 
+					{
+						if( $ReturnObj.AutomationJSONFiles | Where-Object -FilterScript `
+							{ 
+								($_.Split('\')[-1]).Replace('-automation.json', "") -eq ($Path.Split('\')[-1]).Replace('.psd1', "")
+							}
+							Write-Debug -Message "Module is an Integration Module with an Automation JSON file"
+							Write-Debug -Message "File: $($Path) will not be processed as a local PSmodule"
+							$ReturnObj.IntegrationModules += $Path
+							break
+						)
+						else 
+						{
+							Write-Debug -Message "Module is not an Integration Module with an Automation JSON file"
+							$ReturnObj.ModulesUpdated = $True
+							$ReturnObj.ModuleFiles += $Path
+							break						
+						}
+					}
+					else {
+						$ReturnObj.ModulesUpdated = $True
+						$ReturnObj.ModuleFiles += $Path
+						break
+					}
                 }
             }
         }
