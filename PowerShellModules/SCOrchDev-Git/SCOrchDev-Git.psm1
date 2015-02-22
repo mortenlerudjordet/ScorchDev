@@ -70,8 +70,12 @@ Function Update-GitRepository
         [ValidateNotNullOrEmpty()]
         [String]$RepositoryInformationJSON
 	)
-    
-    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+    # IF JSON is used convert to object
+	If($RepositoryInformationJSON) {
+		$RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
+	} 
+	
+	$ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
     # Set current directory to the git repo location
     Set-Location $RepositoryInformation.Path
@@ -80,7 +84,7 @@ Function Update-GitRepository
     {
         Throw-Exception -Type 'GitTargetBranchNotFound' `
                         -Message 'git could not find any current branch' `
-                        -Property @{ 'result' = $(git branch);
+                        -Property @{ 'result' = $(git branch) ;
                                      'match'  = "$(git branch)" -match '\*\s(\w+)'}
     }
     if($Matches[1] -ne $RepositoryInformation.Branch)
@@ -103,6 +107,7 @@ Function Update-GitRepository
         }
     }
 
+    
     try
     {
         $initialization = git pull
@@ -115,26 +120,8 @@ Function Update-GitRepository
         }
         else
         {
-            Write-Exception -Stream Verbose -Exception $_
+            Write-Verbose -Message "Updated Repository"
         }
     }
-    $NewCommit = (git rev-parse --short HEAD)
-
-    $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $RepositoryInformation.CurrentCommit, $null -FilterScript { $_ -ne -1 }) $NewCommit
-    $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() }
-	
-    Foreach($File in $ModifiedFiles)
-    {
-        if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
-        {
-            $ReturnObj.Files += @{ 'FullPath' = "$($Path)\$($Matches[2].Replace('/','\'))";
-                                   'FileName' = $Matches[3];
-                                   'FileExtension' = $Matches[4].ToLower();
-                                   'ChangeType' = $Matches[1] 
-								}
-        }
-    }
-    
-    return (ConvertTo-Json -InputObject $ReturnObj -Compress)
 }
 Export-ModuleMember -Function * -Verbose:$false

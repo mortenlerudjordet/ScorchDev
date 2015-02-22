@@ -23,9 +23,7 @@ Workflow Invoke-GitRepositorySync
         $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$RepositoryName"
         Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 
-        $RunbookWorker = Get-SmaRunbookWorkerDeployment -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                                        -Port $CIVariables.WebservicePort `
-                                                        -Credential $SMACred
+		$RunbookWorker = Get-SMARunbookWorker
         
         # Update the repository on all SMA Workers
         InlineScript
@@ -34,7 +32,7 @@ Workflow Invoke-GitRepositorySync
             Update-GitRepository -RepositoryInformation $RepositoryInformation
         } -PSComputerName $RunbookWorker -PSCredential $SMACred
 
-        $RepositoryChange = ConvertFrom-JSON -InputObject ( Find-GitRepositoryChange -RepositoryInformation (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
+        $RepositoryChange = ConvertFrom-JSON -InputObject ( Find-GitRepositoryChange -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
 		
         if($RepositoryChange.CurrentCommit -ne $RepositoryInformation.CurrentCommit)
         {
@@ -58,22 +56,28 @@ Workflow Invoke-GitRepositorySync
 				} -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
 				If($inlError) {
 					Write-Exception -Stream Error -Exception $inlError
-					# Suspend workflow if error is detected
-					# -ErrorAction Stop
+					# Using ErrorAction stop will suspend Runbook on first call to write-error, this error will not be written to history log in SMA
 					Write-Error -Message "There where errors importing Runbooks: $inlError" 
 					$inlError = $Null
 				}
                 Write-Verbose -Message "[$($RunbookFilePath)] Finished Processing"
+				Checkpoint-Workflow
             }
+			
             Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
-                Write-Verbose -Message "[$($SettingsFilePath)] Starting Processing"
+                
                 Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
                                               -CurrentCommit $RepositoryChange.CurrentCommit `
                                               -RepositoryName $RepositoryName
-                Write-Verbose -Message "[$($SettingsFilePath)] Finished Processing"
+                Checkpoint-Workflow
             }
-            Checkpoint-Workflow
+            
+			foreach($Module in $ReturnInformation.ModuleFiles)
+            {
+                Update-LocalModuleMetadata -ModuleName $Module
+                Checkpoint-Workflow
+            }
 
             if($ReturnInformation.CleanRunbooks)
             {
@@ -86,6 +90,8 @@ Workflow Invoke-GitRepositorySync
             if($ReturnInformation.UpdatePSModules)
             {
                 # Implement a mini version of discover all local modules
+				# Can only import new modules, overwriting does not work fully as automation json files with changes in them will not take hold
+				# Must do DB cleanup first, only unsupported workarounds exist
             }
             $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
                                                                                       -RepositoryName $RepositoryName `

@@ -3,13 +3,13 @@
         Check TFS repository for new commits. If found sync the changes into
         the current SMA environment
 
-    .Parameter ProjectName
+    .Parameter RepositoryName
         Name of the project in TFS, the variables for TFSServer, Collection, Branch and RunbookFolder
         must be created in RepositoryInformation variable set in SMA
 #>
 Workflow Invoke-TFSRepositorySync
 {
-    Param([Parameter(Mandatory=$true)][String] $ProjectName)
+    Param([Parameter(Mandatory=$true)][String] $RepositoryName)
     
     Write-Verbose -Message "Starting [$WorkflowCommandName]"
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
@@ -22,7 +22,7 @@ Workflow Invoke-TFSRepositorySync
     $SMACred = Get-AutomationPSCredential -Name $CIVariables.SMACredName
     Try
     {
-        $RepositoryInformation = (ConvertFrom-Json -InputObject $CIVariables.RepositoryInformation)."$ProjectName"
+        $RepositoryInformation = (ConvertFrom-Json -InputObject $CIVariables.RepositoryInformation)."$RepositoryName"
         
 		Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 		
@@ -69,7 +69,7 @@ Workflow Invoke-TFSRepositorySync
             Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
                 Write-Verbose -Message "[$($SettingsFilePath)] Starting Processing"
-                Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
+                Publish-SMATFSSettingsFileChange -FilePath $SettingsFilePath `
                                               -CurrentChangesetID $TFSChange.LatestChangesetId `
                                               -RepositoryName $RepositoryName
                 Write-Verbose -Message "[$($SettingsFilePath)] Finished Processing"
@@ -92,7 +92,7 @@ Workflow Invoke-TFSRepositorySync
             $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
                                                                                       -Path $Path `
                                                                                       -Commit $TFSChange.LatestChangesetId
-            Set-SmaVariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
+            Set-smavariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
                             -Value $UpdatedRepositoryInformation `
                             -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
                             -Port $CIVariables.WebservicePort `
