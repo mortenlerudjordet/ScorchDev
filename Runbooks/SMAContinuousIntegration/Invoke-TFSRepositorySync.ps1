@@ -26,6 +26,15 @@ Workflow Invoke-TFSRepositorySync
         
 		Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
 		
+		$RunbookWorker = Get-SMARunbookWorker
+		
+		# Update the repository on all SMA Workers
+        InlineScript
+        {
+            $RepositoryInformation = $Using:RepositoryInformation
+            Find-TFSChange -RepositoryInformation $RepositoryInformation
+        } -PSComputerName $RunbookWorker -PSCredential $SMACred
+		
 		# Pass in Json version of RepositoryInformation 
         $TFSChange = ConvertFrom-JSON -InputObject (Find-TFSChange -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
         
@@ -65,6 +74,8 @@ Workflow Invoke-TFSRepositorySync
 					Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
 					$inlError = $Null
 				}
+				
+				Checkpoint-Workflow
 			}	
             Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
@@ -73,22 +84,32 @@ Workflow Invoke-TFSRepositorySync
                                               -CurrentChangesetID $TFSChange.LatestChangesetId `
                                               -RepositoryName $RepositoryName
                 Write-Verbose -Message "[$($SettingsFilePath)] Finished Processing"
+				Checkpoint-Workflow
             }
-            Checkpoint-Workflow
-
+            foreach($Module in $ReturnInformation.ModuleFiles)
+            {
+                Update-LocalModuleMetadata -ModuleName $Module
+                Checkpoint-Workflow
+            }
             if($ReturnInformation.CleanRunbooks)
             {
                 Remove-SmaOrphanRunbook -RepositoryName $RepositoryName
+                Checkpoint-Workflow
             }
             if($ReturnInformation.CleanAssets)
             {
                 Remove-SmaOrphanAsset -RepositoryName $RepositoryName
+                Checkpoint-Workflow
             }
-            if($ReturnInformation.UpdatePSModules)
+            if($ReturnInformation.ModuleFiles)
             {
-                # Implement a mini version of discover all local modules
+                $RepositoryModulePath = "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)"
+                inlinescript
+                {
+                    Add-PSEnvironmentPathLocation -Path $Using:RepositoryModulePath
+                } -PSComputerName $RunbookWorker -PSCredential $SMACred
+                Checkpoint-Workflow
             }
-			
             $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
                                                                                       -Path $Path `
                                                                                       -Commit $TFSChange.LatestChangesetId
