@@ -163,8 +163,9 @@ Function Get-GitRepositoryVariableName
     $RunbookNames = @()
     $RunbookFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
-                                  -Recurse `
-                                  -File
+                                  -Recurse:$True `
+                                  -File:$True `
+								  -Exclude '*-automation.json'
     foreach($RunbookFile in $RunbookFiles)
     {
         $RunbookNames += Get-SmaWorkflowNameFromFile -FilePath $RunbookFile.FullName
@@ -179,8 +180,9 @@ Function Get-GitRepositoryAssetName
                  'Schedule' = @() }
     $AssetFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
-                                  -Recurse `
-                                  -File
+                                  -Recurse:$True `
+                                  -File:$True `
+								  -Exclude '*-automation.json'
     
     foreach($AssetFile in $AssetFiles)
     {
