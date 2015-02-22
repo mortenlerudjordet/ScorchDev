@@ -1,0 +1,36 @@
+﻿{
+    "ConnectionFields":  [
+                              {
+                                 "IsEncrypted":  false,
+                                 "IsOptional":  false,
+                                 "Name":  "HostName",
+                                 "TypeName":  "System.String"
+                             },
+                             {
+                                 "IsEncrypted":  false,
+                                 "IsOptional":  false,
+                                 "Name":  "HostPort",
+                                 "TypeName":  "System.String"
+                             },
+                             {
+                                 "IsEncrypted":  false,
+                                 "IsOptional":  false,
+                                 "Name":  "ServiceName",
+                                 "TypeName":  "System.String"
+                            },
+                             {
+                                 "IsEncrypted":  false,
+                                 "IsOptional":  false,
+                                 "Name":  "UserName",
+                                 "TypeName":  "System.String"
+                             },
+                             {
+                                 "IsEncrypted":  true,
+                                 "IsOptional":  false,
+                                 "Name":  "Password",
+                                 "TypeName":  "System.String"
+                             }
+                         ],
+    "ConnectionTypeName":  "ODPConnection",
+    "IntegrationModuleName":  "SCOrchDev-Oracle"
+}
