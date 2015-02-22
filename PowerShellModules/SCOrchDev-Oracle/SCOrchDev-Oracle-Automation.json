@@ -18,6 +18,18 @@
                                  "Name":  "ServiceName",
                                  "TypeName":  "System.String"
                             },
+							                             {
+                                 "IsEncrypted":  false,
+                                 "IsOptional":  false,
+                                 "Name":  "Query",
+                                 "TypeName":  "System.String"
+                            },
+							                             {
+                                 "IsEncrypted":  false,
+                                 "IsOptional":  false,
+                                 "Name":  "TimeOut",
+                                 "TypeName":  "System.String"
+                            },
                              {
                                  "IsEncrypted":  false,
                                  "IsOptional":  false,
