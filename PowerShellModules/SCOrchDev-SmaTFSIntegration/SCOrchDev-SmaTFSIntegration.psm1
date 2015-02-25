@@ -71,8 +71,8 @@ Function New-SmaChangesetTagLine
         $TagLine = "RepositoryName:$($RepositoryName);$($TagLine)"
         $NewVersion = $True
     }
-    return ConvertTo-JSON @{'TagLine' = $TagLine ;
-                            'NewVersion' = $NewVersion }
+    return (ConvertTo-JSON -InputObject @{'TagLine' = $TagLine ;
+										  'NewVersion' = $NewVersion } -Compress)
 }
 <#
     .Synopsis
@@ -93,7 +93,7 @@ Function Get-SmaVariablesFromFile
         Write-Warning -Message "No variables root in folder"
     }
 
-    return ConvertTo-JSON $Variables
+    return (ConvertTo-JSON -InputObject $Variables -Compress)
 }
 <#
     .Synopsis
@@ -114,7 +114,7 @@ Function Get-SmaSchedulesFromFile
         Write-Warning -Message "No Schedules root in folder"
     }
 
-    return ConvertTo-JSON $Variables
+    return (ConvertTo-JSON -InputObject $Variables -Compress)
 }
 <#
     .Synopsis
@@ -139,7 +139,7 @@ Function Set-SmaRepositoryInformationCommitVersion
     $_RepositoryInformation = (ConvertFrom-JSON $RepositoryInformation)
     $_RepositoryInformation."$RepositoryName".CurrentChangesetID = $Commit
 
-    return (ConvertTo-Json $_RepositoryInformation)
+    return (ConvertTo-Json -InputObject $_RepositoryInformation -Compress)
 }
 Function Get-GitRepositoryWorkflowName
 {
@@ -330,7 +330,7 @@ Function Group-RepositoryFile
         if($ReturnObj.UpdatePSModules) { break }
     }
 
-    Return (ConvertTo-JSON $ReturnObj)
+    Return (ConvertTo-JSON -InputObject $ReturnObj -Compress)
 }
 Function Get-PrefixedVariablesFromSMA {
 <#
