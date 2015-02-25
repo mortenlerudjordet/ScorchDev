@@ -358,13 +358,18 @@ Function Get-PrefixedVariablesFromSMA {
 			If( $Name -like ($PreFix + "-*") ) {
 				Write-Debug -Message "Adding variable: $Name"
 				$SMAVar = Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port
-				If($SMAVar.isEncrypted -eq "True") {
-					$SMAVariableSet[$Name] = "isEncrypted"
+				If($SMAVar) {
+					If($SMAVar.isEncrypted -eq "True") {
+						$SMAVariableSet[$Name] = "isEncrypted"
+					}
+					Else {
+						$SMAVariableSet[$Name] = (Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port).Value
+					}
+					Write-Debug -Message "Variable [$Name] = [$($SMAVariableSet[$Name])]"
 				}
 				Else {
-					$SMAVariableSet[$Name] = (Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port).Value
+					Write-Warning -Message "Could not retrieve variable [$Name] from SMA"
 				}
-				Write-Debug -Message "Variable [$Name] = [$($SMAVariableSet[$Name])]"
 			}
 			Else {
 				Write-Debug -Message "No Match: skipping variable [$Name]"
