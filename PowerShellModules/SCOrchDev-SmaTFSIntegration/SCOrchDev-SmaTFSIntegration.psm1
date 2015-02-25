@@ -332,4 +332,46 @@ Function Group-RepositoryFile
 
     Return (ConvertTo-JSON $ReturnObj)
 }
+Function Get-PrefixedVariablesFromSMA {
+<#
+    .SYNOPSIS
+        Retrieves all variables in SMA with defined Prefixes
+#>
+	[CmdletBinding()]
+    PARAM (
+		[Parameter(Mandatory=$true,HelpMessage='Prefixes of all SMA variables to be fetched')][Alias('Pre','p')]
+		[string[]]$PreFixes,
+		[string]$WebServiceEndpoint = "https://sma.lerun.info",
+		[string]$Port = "443"
+	)
+	    
+	$AllVariables = Get-SmaVariable -WebServiceEndpoint $WebServiceEndpoint -Port $Port 
+	
+	$SMAVariableSets = New-Object -TypeName PSObject
+	ForEach($Prefix in $PreFixes) {
+		Write-Verbose -Message "Processing set: $($Prefix)"
+		$SMAVariableSet = @{}
+		ForEach($Name in $AllVariables.Name) {
+			Write-Verbose -Message "Processing variable: $($Name)"
+			If( $Name -like ($PreFix + "-*") ) {
+				Write-Verbose -Message "Adding variable: $($Name)"
+				$Value = Get-AutomationVariable -Name "$Name"
+				Write-Verbose -Message "Value of automation variable: $($Value)"
+                If(-not [string]::isNullOrEmpty([string]$Value)) {
+					Write-Verbose -Message "Adding variable to hash table: $($Name)"
+					Write-Verbose -Message "Adding value to hash table: $($Value)"
+					$SMAVariableSet[$Name] = $Value
+                    $Value = $Null
+				}
+			}
+			Else {
+				Write-Verbose -Message "Skipping variable: $($Name)"
+			}
+		}
+        Write-Verbose -Message "Adding SMA variable hash table to PS object, hashtable has number $($SMAVariableSet.Count) of elements" 
+		Add-Member -InputObject $SMAVariableSets -Name $Prefix -Value $SMAVariableSet -MemberType NoteProperty
+		$SMAVariableSet = $Null
+	}
+Return $SMAVariableSets
+}
 Export-ModuleMember -Function * -Verbose:$false -Debug:$False
