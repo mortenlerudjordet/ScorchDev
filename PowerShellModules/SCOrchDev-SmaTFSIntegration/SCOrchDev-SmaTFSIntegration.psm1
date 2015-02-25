@@ -344,31 +344,33 @@ Function Get-PrefixedVariablesFromSMA {
 		[string]$WebServiceEndpoint = "https://sma.lerun.info",
 		[string]$Port = "443"
 	)
-	    
-	$AllVariables = Get-SmaVariable -WebServiceEndpoint $WebServiceEndpoint -Port $Port 
+	
+	
+	$AllVariables = Get-SmaVariable -WebServiceEndpoint $WebServiceEndpoint -Port $Port | Select-Object -ExpandProperty Name
 	
 	$SMAVariableSets = New-Object -TypeName PSObject
 	ForEach($Prefix in $PreFixes) {
 		Write-Verbose -Message "Processing set: $($Prefix)"
 		$SMAVariableSet = @{}
-		ForEach($Name in $AllVariables.Name) {
-			Write-Verbose -Message "Processing variable: $($Name)"
+		ForEach($Name in $AllVariables) {
+			Write-Debug -Message "Processing variable: $Name"
+			Write-Debug -Message "Matching against prefix: $Prefix"
 			If( $Name -like ($PreFix + "-*") ) {
-				Write-Verbose -Message "Adding variable: $($Name)"
-				$Value = Get-AutomationVariable -Name "$Name"
-				Write-Verbose -Message "Value of automation variable: $($Value)"
-                If(-not [string]::isNullOrEmpty([string]$Value)) {
-					Write-Verbose -Message "Adding variable to hash table: $($Name)"
-					Write-Verbose -Message "Adding value to hash table: $($Value)"
-					$SMAVariableSet[$Name] = $Value
-                    $Value = $Null
+				Write-Debug -Message "Adding variable: $Name"
+				$SMAVar = Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port
+				If($SMAVar.isEncrypted -eq "True") {
+					$SMAVariableSet[$Name] = "isEncrypted"
 				}
+				Else {
+					$SMAVariableSet[$Name] = (Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port).Value
+				}
+				Write-Debug -Message "Variable [$Name] = [$($SMAVariableSet[$Name])]"
 			}
 			Else {
-				Write-Verbose -Message "Skipping variable: $($Name)"
+				Write-Debug -Message "No Match: skipping variable [$Name]"
 			}
 		}
-        Write-Verbose -Message "Adding SMA variable hash table to PS object, hashtable has number $($SMAVariableSet.Count) of elements" 
+        Write-Verbose -Message "Adding SMA variable set to container, variable set has $($SMAVariableSet.Count) elements" 
 		Add-Member -InputObject $SMAVariableSets -Name $Prefix -Value $SMAVariableSet -MemberType NoteProperty
 		$SMAVariableSet = $Null
 	}
