@@ -23,35 +23,22 @@ Workflow Remove-SmaOrphanAsset
 
     $RepositoryInformation = (ConvertFrom-JSON -InputObject $CIVariables.RepositoryInformation)."$RepositoryName"
 
-    $SmaVariables = ConvertTo-Hashtable -InputObject ( Get-SmaVariable -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                                                       -Port $CIVariables.WebservicePort `
-                                                                       -Credential $SMACred ) `
-                                        -KeyName 'Description' `
-                                        -KeyFilterScript {
-                                                            Param($KeyName)
-                                                            if($KeyName -match 'RepositoryName:([^;]+);')
-                                                            {
-                                                                $Matches[1]
-                                                            }
-                                                         }
+    $SmaVariables = Get-SmaVariable -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                    -Port $CIVariables.WebservicePort `
+                                    -Credential $SMACred
+    if($SmaVariables) { $SmaVariableTable = Group-SmaAssetsByRepository -InputObject $SmaVariables }
 
-    $SmaSchedules = ConvertTo-Hashtable -InputObject ( Get-SmaSchedule -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                                                       -Port $CIVariables.WebservicePort `
-                                                                       -Credential $SMACred ) `
-                                        -KeyName 'Description' `
-                                        -KeyFilterScript {
-                                                            Param($KeyName)
-                                                            if($KeyName -match 'RepositoryName:([^;]+);')
-                                                            {
-                                                                $Matches[1]
-                                                            }
-                                                         }
+    $SmaSchedules = Get-SmaSchedule -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                    -Port $CIVariables.WebservicePort `
+                                    -Credential $SMACred
+    if($SmaSchedules) { $SmaScheduleTable = Group-SmaAssetsByRepository -InputObject $SmaSchedules }
 
+    # TODO: If this is null we won't clean up
     $RepositoryAssets = Get-GitRepositoryAssetName -Path "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)"
 
-    if($SmaVariables."$RepositoryName")
+    if($SmaVariableTable."$RepositoryName")
     {
-        $VariableDifferences = Compare-Object -ReferenceObject $SmaVariables."$RepositoryName".Name `
+        $VariableDifferences = Compare-Object -ReferenceObject $SmaVariableTable."$RepositoryName".Name `
                                               -DifferenceObject $RepositoryAssets.Variable
         Foreach($Difference in $VariableDifferences)
         {
@@ -72,9 +59,9 @@ Workflow Remove-SmaOrphanAsset
                       -WarningAction Continue
     }
 
-    if($SmaSchedules."$RepositoryName")
+    if($SmaScheduleTable."$RepositoryName")
     {
-        $ScheduleDifferences = Compare-Object -ReferenceObject $SmaSchedules."$RepositoryName".Name `
+        $ScheduleDifferences = Compare-Object -ReferenceObject $SmaScheduleTable."$RepositoryName".Name `
                                               -DifferenceObject $RepositoryAssets.Schedule
         Foreach($Difference in $ScheduleDifferences)
         {

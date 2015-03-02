@@ -28,18 +28,30 @@ Workflow Invoke-GitRepositorySync
         # Update the repository on all SMA Workers
         InlineScript
         {
-            $RepositoryInformation = $Using:RepositoryInformation
-            Update-GitRepository -RepositoryInformation $RepositoryInformation
+            $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Continue
+		    & {
+			    $null = $(
+				    $DebugPreference       = [System.Management.Automation.ActionPreference]::SilentlyContinue
+				    $VerbosePreference     = [System.Management.Automation.ActionPreference]::SilentlyContinue
+				    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+                    
+                    $RepositoryInformation = $Using:RepositoryInformation
+                    Update-GitRepository -RepositoryInformation $RepositoryInformation
+                )
+            }
         } -PSComputerName $RunbookWorker -PSCredential $SMACred
 
-        $RepositoryChange = ConvertFrom-JSON -InputObject ( Find-GitRepositoryChange -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
-		
-        if($RepositoryChange.CurrentCommit -ne $RepositoryInformation.CurrentCommit)
+        $RepositoryChangeJSON = Find-GitRepositoryChange -RepositoryInformation $RepositoryInformation
+        $RepositoryChange = ConvertFrom-JSON $RepositoryChangeJSON
+        if("$($RepositoryChange.CurrentCommit)" -ne "$($RepositoryInformation.CurrentCommit)")
         {
             Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryChange.CurrentCommit)]"
-            
-            $ReturnInformation = ConvertFrom-JSON (Group-RepositoryFile -Files $RepositoryChange.Files `
-                                                                        -RepositoryInformation $RepositoryInformation)
+            Write-Verbose -Message "RepositoryChange [$RepositoryChangeJSON]"
+            $ReturnInformationJSON = Group-RepositoryFile -Files $RepositoryChange.Files `
+                                                          -RepositoryInformation $RepositoryInformation
+            $ReturnInformation = ConvertFrom-JSON -InputObject $ReturnInformationJSON
+            Write-Verbose -Message "ReturnInformation [$ReturnInformationJSON]"
+
             Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
             {
                 Write-Verbose -Message "[$($RunbookFilePath)] Starting Processing"
@@ -97,14 +109,14 @@ Workflow Invoke-GitRepositorySync
                 } -PSComputerName $RunbookWorker -PSCredential $SMACred
                 Checkpoint-Workflow
             }
-            $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
+            $UpdatedRepositoryInformation = (Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
                                                                                       -RepositoryName $RepositoryName `
-                                                                                      -Commit $RepositoryChange.CurrentCommit
-            Set-SmaVariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
-                            -Value $UpdatedRepositoryInformation `
-                            -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                            -Port $CIVariables.WebservicePort `
-                            -Credential $SMACred
+                                                                                      -Commit $RepositoryChange.CurrentCommit) -as [string]
+            $VariableUpdate = Set-SmaVariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
+                                              -Value $UpdatedRepositoryInformation `
+                                              -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                              -Port $CIVariables.WebservicePort `
+                                              -Credential $SMACred
             
             Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryChange.CurrentCommit)]"
         }

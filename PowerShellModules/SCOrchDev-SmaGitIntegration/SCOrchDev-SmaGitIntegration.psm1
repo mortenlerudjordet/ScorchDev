@@ -210,7 +210,7 @@ Function Group-RepositoryFile
 {
     Param([Parameter(Mandatory=$True)] $Files,
           [Parameter(Mandatory=$True)] $RepositoryInformation)
-
+    Write-Verbose -Message "Starting [Group-RepositoryFile]"
     $_Files = ConvertTo-Hashtable -InputObject $Files -KeyName FileExtension
     $ReturnObj = @{ 'ScriptFiles' = @() ;
                     'SettingsFiles' = @() ;
@@ -222,47 +222,58 @@ Function Group-RepositoryFile
                     'ModulesUpdated' = $False }
 
     # Process PS1 Files
-    $PowerShellScriptFiles = ConvertTo-HashTable $_Files.'.ps1' -KeyName 'FileName'
-    foreach($ScriptName in $PowerShellScriptFiles.Keys)
+    try
     {
-        if($PowerShellScriptFiles."$ScriptName".ChangeType -contains 'M' -or
-           $PowerShellScriptFiles."$ScriptName".ChangeType -contains 'A')
+        $PowerShellScriptFiles = ConvertTo-HashTable $_Files.'.ps1' -KeyName 'FileName'
+        Write-Verbose -Message "Found Powershell Files"
+        foreach($ScriptName in $PowerShellScriptFiles.Keys)
         {
-            foreach($Path in $PowerShellScriptFiles."$ScriptName".FullPath)
+            if($PowerShellScriptFiles."$ScriptName".ChangeType -contains 'M' -or
+               $PowerShellScriptFiles."$ScriptName".ChangeType -contains 'A')
             {
-                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                foreach($Path in $PowerShellScriptFiles."$ScriptName".FullPath)
                 {
-                    $ReturnObj.ScriptFiles += $Path
-                    break
-                }
-            }            
-        }
-        else
-        {
-            $ReturnObj.CleanRunbooks = $True
-        }
-    }
-
-    # Process Settings Files
-    $SettingsFiles = ConvertTo-HashTable $_Files.'.json' -KeyName 'FileName'
-    foreach($SettingsFileName in $SettingsFiles.Keys)
-    {
-        if($SettingsFiles."$SettingsFileName".ChangeType -contains 'M' -or
-           $SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
-        {
-            foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
+                    if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                    {
+                        $ReturnObj.ScriptFiles += $Path
+                        break
+                    }
+                }            
+            }
+            else
             {
-                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
-                {
-                    $ReturnObj.CleanAssets = $True
-                    $ReturnObj.SettingsFiles += $Path
-                    break
-                }
+                $ReturnObj.CleanRunbooks = $True
             }
         }
-        else
+    }
+    catch
+    {
+        Write-Verbose -Message "No Powershell Files found"
+    }
+    try
+    {
+        # Process Settings Files
+        $SettingsFiles = ConvertTo-HashTable $_Files.'.json' -KeyName 'FileName'
+        Write-Verbose -Message "Found Settings Files"
+        foreach($SettingsFileName in $SettingsFiles.Keys)
         {
-            $ReturnObj.CleanAssets = $True
+            if($SettingsFiles."$SettingsFileName".ChangeType -contains 'M' -or
+               $SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
+            {
+                foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
+                {
+                    if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                    {
+                        $ReturnObj.CleanAssets = $True
+                        $ReturnObj.SettingsFiles += $Path
+                        break
+                    }
+                }
+            }
+            else
+            {
+                $ReturnObj.CleanAssets = $True
+            }
         }
     }	
 	# Process Settings Files again to find automation json files
@@ -289,15 +300,17 @@ Function Group-RepositoryFile
             }
         }
     }
-		
-    $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
-    foreach($PSModuleName in $PSModuleFiles.Keys)
+    catch
     {
-        if($PSModuleFiles."$PSModuleName".ChangeType -contains 'M' -or
-           $PSModuleFiles."$PSModuleName".ChangeType -contains 'A')
+        Write-Verbose -Message "No Settings Files found"
+    }
+    try
+    {
+        $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
+        Write-Verbose -Message "Found Powershell Module Files"
+        foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
         {
-            foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
-            {
+
                 if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*" )
 				{
                     if( $ReturnObj.AutomationJSONFiles ) 
@@ -324,12 +337,51 @@ Function Group-RepositoryFile
 						$ReturnObj.ModuleFiles += $Path
 						break
 					}
-                }
             }
+            if($ReturnObj.UpdatePSModules) { break }
         }
-        if($ReturnObj.UpdatePSModules) { break }
     }
-
-    Return (ConvertTo-JSON -InputObject $ReturnObj -Compress)
+    catch
+    {
+        Write-Verbose -Message "No Powershell Module Files found"
+    }
+    Write-Verbose -Message "Finished [Group-RepositoryFile]"
+    Return (ConvertTo-JSON $ReturnObj -Compress)
+}
+<#
+    .Synopsis
+        Groups a list of SmaRunbooks by the RepositoryName from the
+        tag line
+#>
+Function Group-SmaRunbooksByRepository
+{
+    Param([Parameter(Mandatory=$True)] $InputObject)
+    ConvertTo-Hashtable -InputObject $InputObject `
+                        -KeyName 'Tags' `
+                        -KeyFilterScript { 
+                            Param($KeyName)
+                            if($KeyName -match 'RepositoryName:([^;]+);')
+                            {
+                                $Matches[1]
+                            }
+                        }
+}
+<#
+    .Synopsis
+        Groups a list of SmaRunbooks by the RepositoryName from the
+        tag line
+#>
+Function Group-SmaAssetsByRepository
+{
+    Param([Parameter(Mandatory=$True)] $InputObject)
+    ConvertTo-Hashtable -InputObject $InputObject `
+                        -KeyName 'Description' `
+                        -KeyFilterScript { 
+                            Param($KeyName)
+                            if($KeyName -match 'RepositoryName:([^;]+);')
+                            {
+                                $Matches[1]
+                            }
+                        }
 }
 Export-ModuleMember -Function * -Verbose:$false -Debug:$False

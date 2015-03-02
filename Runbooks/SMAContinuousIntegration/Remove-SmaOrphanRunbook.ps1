@@ -23,21 +23,12 @@ Workflow Remove-SmaOrphanRunbook
 
     $RepositoryInformation = (ConvertFrom-JSON -InputObject $CIVariables.RepositoryInformation)."$RepositoryName"
 
-    $SmaRunbooks = ConvertTo-Hashtable -InputObject(Get-SMARunbookPaged -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
-                                                                        -Port $CIVariables.WebservicePort `
-                                                                        -Credential $SMACred) `
-                                       -KeyName 'Tags' `
-                                       -KeyFilterScript { 
-                                                            Param($KeyName)
-                                                            if($KeyName -match 'RepositoryName:([^;]+);')
-                                                            {
-                                                                $Matches[1]
-                                                            }
-                                                        }
-    
-    
+    $SmaRunbooks = Get-SMARunbookPaged -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
+                                       -Port $CIVariables.WebservicePort `
+                                       -Credential $SMACred
+    if($SmaRunbooks) { $SmaRunbookTable = Group-SmaRunbooksByRepository -InputObject $SmaRunbooks }
     $RepositoryWorkflows = Get-GitRepositoryWorkflowName -Path "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)"
-    $Differences = Compare-Object -ReferenceObject $SmaRunbooks.$RepositoryName.RunbookName `
+    $Differences = Compare-Object -ReferenceObject $SmaRunbookTable.$RepositoryName.RunbookName `
                                   -DifferenceObject $RepositoryWorkflows
     
     Foreach($Difference in $Differences)

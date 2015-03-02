@@ -25,7 +25,15 @@ workflow Monitor-SourceControlChange
 		try
 		{
             $RepositoryInformation = ConvertFrom-JSON $CIVariables.RepositoryInformation
-            foreach($RepositoryName in ($RepositoryInformation | Get-Member -MemberType NoteProperty).Name )
+            foreach($RepositoryName in (ConvertFrom-PSCustomObject -InputObject $RepositoryInformation `
+                                                                   -KeyFilterScript {
+                                                                        Param($KeyName)
+                                                                        if($KeyName -notin ('PSComputerName',
+                                                                                            'PSShowComputerName',
+                                                                                            'PSSourceJobInstanceId'))
+                                                                        {
+                                                                            $KeyName
+                                                                        }}).Keys )
             {
                 Write-Verbose -Message "[$RepositoryName] Starting Processing"
                 Invoke-GitRepositorySync -RepositoryName $RepositoryName
@@ -66,6 +74,6 @@ workflow Monitor-SourceControlChange
     }
 	#  Relaunch this monitor
 	Write-Verbose -Message "Reached end of monitor lifespan. Relaunching this monitor [$WorkflowCommandName]."
-	#$Launch = Start-SmaRunbook -Name $WorkflowCommandName `
-#							   -WebServiceEndpoint $WebServiceEndpoint
+	$Launch = Start-SmaRunbook -Name $WorkflowCommandName `
+     						   -WebServiceEndpoint $WebServiceEndpoint
 }

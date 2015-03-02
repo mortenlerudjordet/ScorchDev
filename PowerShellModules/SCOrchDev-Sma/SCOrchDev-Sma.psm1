@@ -12,6 +12,55 @@ add-type @"
             }
         }
 "@ -Verbose:$False -Debug:$false
+Function Get-PrefixedVariablesFromSMA {
+<#
+    .SYNOPSIS
+        Retrieves all variables in SMA with defined Prefixes
+#>
+	[CmdletBinding()]
+    PARAM (
+		[Parameter(Mandatory=$true,HelpMessage='Prefixes of all SMA variables to be fetched')][Alias('Pre','p')]
+		[string[]]$PreFixes,
+		[string]$WebServiceEndpoint = "https://sma.lerun.info",
+		[string]$Port = "443"
+	)
+	
+	
+	$AllVariables = Get-SmaVariable -WebServiceEndpoint $WebServiceEndpoint -Port $Port | Select-Object -ExpandProperty Name
+	
+	$SMAVariableSets = New-Object -TypeName PSObject
+	ForEach($Prefix in $PreFixes) {
+		Write-Verbose -Message "Processing set: $($Prefix)"
+		$SMAVariableSet = @{}
+		ForEach($Name in $AllVariables) {
+			Write-Debug -Message "Processing variable: $Name"
+			Write-Debug -Message "Matching against prefix: $Prefix"
+			If( $Name -like ($PreFix + "-*") ) {
+				Write-Debug -Message "Adding variable: $Name"
+				$SMAVar = Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port
+				If($SMAVar) {
+					If($SMAVar.isEncrypted -eq "True") {
+						$SMAVariableSet[$Name] = "isEncrypted"
+					}
+					Else {
+						$SMAVariableSet[$Name] = (Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port).Value
+					}
+					Write-Debug -Message "Variable [$Name] = [$($SMAVariableSet[$Name])]"
+				}
+				Else {
+					Write-Warning -Message "Could not retrieve variable [$Name] from SMA"
+				}
+			}
+			Else {
+				Write-Debug -Message "No Match: skipping variable [$Name]"
+			}
+		}
+        Write-Verbose -Message "Adding SMA variable set to container, variable set has $($SMAVariableSet.Count) elements" 
+		Add-Member -InputObject $SMAVariableSets -Name $Prefix -Value $SMAVariableSet -MemberType NoteProperty
+		$SMAVariableSet = $Null
+	}
+	Return $SMAVariableSets
+}
 <#
     .SYNOPSIS
         Gets one or more SMA variable values from the given web service endpoint.
@@ -279,12 +328,12 @@ Function Format-SMAObject
 #>
 Function Set-SmaRunbookTags
 {
-    Param([string]$RunbookID, 
-          [string]$Tags=$null,
-          [string]$WebserviceEndpoint=$null,
-          [string]$TenantId='00000000-0000-0000-0000-000000000000',
-          [string]$port = "9090",
-          [pscredential]$Credential)
+    Param([Parameter(Mandatory=$true)][string]$RunbookID, 
+          [Parameter(Mandatory=$false)][string]$Tags=$null,
+          [Parameter(Mandatory=$true)][string]$WebserviceEndpoint=$null,
+          [Parameter(Mandatory=$false)][string]$TenantId='00000000-0000-0000-0000-000000000000',
+          [Parameter(Mandatory=$false)][string]$port = "9090",
+          [Parameter(Mandatory=$false)][pscredential]$Credential)
 
     $null = $(
         Write-Verbose -Message "Starting Set-SmaRunbookTags for [$RunbookID] Tags [$Tags]" 
@@ -358,53 +407,106 @@ Function Get-SMARunbookWorker
         }
     }
 }
-Function Get-PrefixedVariablesFromSMA {
 <#
-    .SYNOPSIS
-        Retrieves all variables in SMA with defined Prefixes
+    .Synopsis
+        Returns job data about a runbook worker for a given time window. Default time
+        window is the last hour
+    
+    .Parameter SqlServer
+        The name of the SQL server hosting the SMA database
+    
+    .Parameter Host
+        The Name of the runbook worker to return information for
+
+    .Parameter StartTime
+        The Start Time for the window of logs
+
+    .Parameter EndTime
+        The End Time for the window of logs
 #>
-	[CmdletBinding()]
-    PARAM (
-		[Parameter(Mandatory=$true,HelpMessage='Prefixes of all SMA variables to be fetched')][Alias('Pre','p')]
-		[string[]]$PreFixes,
-		[string]$WebServiceEndpoint = "https://sma.lerun.info",
-		[string]$Port = "443"
-	)
-	
-	
-	$AllVariables = Get-SmaVariable -WebServiceEndpoint $WebServiceEndpoint -Port $Port | Select-Object -ExpandProperty Name
-	
-	$SMAVariableSets = New-Object -TypeName PSObject
-	ForEach($Prefix in $PreFixes) {
-		Write-Verbose -Message "Processing set: $($Prefix)"
-		$SMAVariableSet = @{}
-		ForEach($Name in $AllVariables) {
-			Write-Debug -Message "Processing variable: $Name"
-			Write-Debug -Message "Matching against prefix: $Prefix"
-			If( $Name -like ($PreFix + "-*") ) {
-				Write-Debug -Message "Adding variable: $Name"
-				$SMAVar = Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port
-				If($SMAVar) {
-					If($SMAVar.isEncrypted -eq "True") {
-						$SMAVariableSet[$Name] = "isEncrypted"
-					}
-					Else {
-						$SMAVariableSet[$Name] = (Get-SmaVariable -Name $Name -WebServiceEndpoint $WebServiceEndpoint -Port $Port).Value
-					}
-					Write-Debug -Message "Variable [$Name] = [$($SMAVariableSet[$Name])]"
-				}
-				Else {
-					Write-Warning -Message "Could not retrieve variable [$Name] from SMA"
-				}
-			}
-			Else {
-				Write-Debug -Message "No Match: skipping variable [$Name]"
-			}
-		}
-        Write-Verbose -Message "Adding SMA variable set to container, variable set has $($SMAVariableSet.Count) elements" 
-		Add-Member -InputObject $SMAVariableSets -Name $Prefix -Value $SMAVariableSet -MemberType NoteProperty
-		$SMAVariableSet = $Null
-	}
-Return $SMAVariableSets
+Function Get-SmaRunbookWorkerJob
+{
+    Param([Parameter(Mandatory=$true) ][string]   $SqlServer,
+          [Parameter(Mandatory=$true) ][string]   $RunbookWorker,
+          [Parameter(Mandatory=$false)][DateTime] $StartTime = (Get-Date).AddHours(-1),
+          [Parameter(Mandatory=$false)][AllowNull()] $EndTime = $null,
+          [Parameter(Mandatory=$false)]
+          [ValidateSet('New', 'Activating', 'Running', 'Completed', 'Failed', 'Stopped',
+                       'Blocked', 'Suspended', 'Disconnected', 'Suspending', 'Stopping',
+                       'Resuming', 'Removing', 'All')]
+          $JobStatus = 'All')
+
+    $SqlQuery = 'DECLARE @low INT, @high INT
+                            SELECT @low = LowKey, @high = HighKey 
+                            FROM [SMA].[Queues].[Deployment]
+                            WHERE ComputerName = @RunbookWorker
+ 
+                            select r.*, 
+	                               j.*
+                            from sma.core.vwJobs as j
+                            inner join [SMA].[Core].[RunbookVersions] as v
+                            on j.RunbookVersionId = v.RunbookVersionId
+                            inner join [SMA].[Core].[Runbooks] as r 
+                            on v.RunbookKey = r.RunbookKey
+                            where PartitionId > @low and PartitionId < @high
+                            and StartTime >  @start'
+    $Parameters = @{'start' = $StartTime ;
+                    'RunbookWorker' = $RunbookWorker}
+    if($EndTime) 
+    { 
+        $SqlQuery = "$($SqlQuery)`r`nand StartTime < @end" 
+        $Parameters.Add('end',$EndTime) | Out-Null
+
+    }
+    if($JobStatus -ne 'All')
+    {
+        $SqlQuery = "$($SqlQuery)`r`nand j.JobStatus = @JobStatus" 
+        $Parameters.Add('JobStatus',$JobStatus) | Out-Null
+    }
+    Invoke-SqlQuery -query $SqlQuery `
+                    -parameters $Parameters `
+                    -connectionString "Data Source=$SqlServer;Initial Catalog=SMA;Integrated Security=True;"
+}
+<#
+    .Synopsis
+        Starts a SMA runbook. Uses invoke-restmethod instead of Start-SMARunbook.
+    
+    .Parameter RunbookId
+        The GUID of the runbook to start
+
+    .Parameter WebserviceEndpoint
+        The url for the SMA webservice
+
+    .Parameter WebservicePort
+        The port that the SMA webservice is running on.
+
+    .Parameter TenantID
+        The ID of the target tenant
+
+    .Parameter Credential
+        A credential object to use for the request. If not passed this method will use
+        the default credential
+#>
+Function Start-SmaRunbookREST
+{
+    Param([Parameter(Mandatory=$True)] [string]  $RunbookId,
+          [Parameter(Mandatory=$False)]          $Parameters = $null,
+          [Parameter(Mandatory=$False)][string]  $WebserviceEndpoint = 'https://localhost',
+          [Parameter(Mandatory=$False)][string]  $WebservicePort = '9090',
+          [Parameter(Mandatory=$False)][string]  $TenantID = '00000000-0000-0000-0000-000000000000',
+          [Parameter(Mandatory=$False)][pscredential] $Credential)
+    
+    $null = $(
+        $RestMethodParameters  = @{ 'URI' = "$($WebserviceEndpoint):$($WebservicePort)/$($TenantID)/Runbooks(guid'$($RunbookId)')/Start" ;
+                                    'Body' =  ConvertTo-JSON @{'Parameters' = $Parameters} ;
+                                    'Method' = 'Post'
+                                    'ContentType' = 'application/json;odata=verbose' }
+                                    
+        if($Credential) { $RestMethodParameters.Add('Credential',$Credential) }
+        else { $RestMethodParameters.Add('UseDefaultCredentials', $True) }
+
+        $Result = Invoke-RestMethod @RestMethodParameters
+    )
+    return $Result
 }
 Export-ModuleMember -Function * -Verbose:$false -Debug:$False
