@@ -176,6 +176,29 @@ Workflow Publish-SMASettingsFileChange
             }
             Write-Verbose -Message "[$($ScheduleName)] Finished Updating"
         }
+		
+		$Connections = ConvertFrom-PSCustomObject ( ConvertFrom-JSON (Get-SmaConnectionFromFile -FilePath $FilePath) )
+        foreach($ConnectionName in $Connections.Keys)
+        {
+			Write-Verbose -Message "[$ConnectionName] Updating"
+            try
+            {
+				$Connection = $Connections."$ConnectionName"
+                $ErrorActionPreference = [System.Management.Automation.ActionPreference]::SilentlyContinue
+                # Check if connection type is imported into SMA
+				$SmaConnection = Get-SmaConnection -ConnectionTypeName $ConnectionName `
+												   -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                                   -Port $CIVariables.WebservicePort `
+                                                   -Credential $SMACred
+                $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+			}
+			catch
+            {
+                Write-Exception $_ -Stream Warning
+            }
+            Write-Verbose -Message "[$($ConnectionName)] Finished Updating"
+		}
+		
     }
     Catch
     {

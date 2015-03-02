@@ -118,6 +118,27 @@ Function Get-SmaSchedulesFromFile
 }
 <#
     .Synopsis
+        Returns all connections in a JSON settings file
+
+    .Parameter FilePath
+        The path to the JSON file containing SMA settings
+#>
+Function Get-SmaConnectionsFromFile
+{
+    Param([Parameter(Mandatory=$false)][string] $FilePath)
+
+    $FileContent = Get-Content $FilePath
+    $Connections = ConvertFrom-PSCustomObject ((ConvertFrom-Json ((Get-Content -Path $FilePath) -as [String])).Connections)
+
+    if(Test-IsNullOrEmpty $Connections.Keys)
+    {
+        Write-Warning -Message "No connections root in folder"
+    }
+
+    return (ConvertTo-JSON -InputObject $Connections -Compress)
+}
+<#
+    .Synopsis
         Updates a Global RepositoryInformation string with the new commit version
         for the target repository
 
@@ -177,7 +198,9 @@ Function Get-GitRepositoryAssetName
     Param([Parameter(Mandatory=$false)][string] $Path)
 
     $Assets = @{ 'Variable' = @() ;
-                 'Schedule' = @() }
+                 'Schedule' = @() ;
+				 'Connection' = @()	
+				}
     $AssetFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
                                   -Recurse:$True `
@@ -193,6 +216,10 @@ Function Get-GitRepositoryAssetName
         Foreach($ScheduleName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON (Get-SmaSchedulesFromFile -FilePath $AssetFile.FullName))).Keys)
         {
             $Assets.Schedule += $ScheduleName
+        }
+		Foreach($ScheduleName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON (Get-SmaConnectionFromFile -FilePath $AssetFile.FullName))).Keys)
+        {
+            $Assets.Connection += $ConnectionName
         }
     }
     Return $Assets
