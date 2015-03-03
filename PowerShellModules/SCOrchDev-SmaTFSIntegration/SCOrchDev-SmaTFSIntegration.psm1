@@ -81,40 +81,57 @@ Function New-SmaChangesetTagLine
     .Parameter FilePath
         The path to the JSON file containing SMA settings
 #>
-Function Get-SmaVariablesFromFile
+Function Get-SmaGlobalFromFile
 {
-    Param([Parameter(Mandatory=$false)][string] $FilePath)
+    Param([Parameter(Mandatory=$false)]
+          [string] 
+          $FilePath,
+          
+          [ValidateSet('Variables','Schedules','Connections')]
+          [Parameter(Mandatory=$false)]
+          [string] 
+          $GlobalType )
 
-    $FileContent = Get-Content $FilePath
-    $Variables = ConvertFrom-PSCustomObject ((ConvertFrom-Json ((Get-Content -Path $FilePath) -as [String])).Variables)
-
-    if(Test-IsNullOrEmpty $Variables.Keys)
+    $ReturnInformation = @{}
+    try
     {
-        Write-Warning -Message "No variables root in folder"
+        $SettingsJSON = (Get-Content $FilePath) -as [string]
+        $SettingsObject = ConvertFrom-Json -InputObject $SettingsJSON
+        $SettingsHashTable = ConvertFrom-PSCustomObject $SettingsObject
+        
+        if(-not ($SettingsHashTable.ContainsKey($GlobalType)))
+        {
+            Throw-Exception -Type 'GlobalTypeNotFound' `
+                            -Message 'Global Type not found in settings file.' `
+                            -Property @{ 'FilePath' = $FilePath ;
+                                         'GlobalType' = $GlobalType ;
+                                         'SettingsJSON' = $SettingsJSON }
+        }
+
+        $GlobalTypeObject = $SettingsHashTable."$GlobalType"
+        $GlobalTypeHashTable = ConvertFrom-PSCustomObject $GlobalTypeObject -ErrorAction SilentlyContinue
+
+        if(-not $GlobalTypeHashTable)
+        {
+            Throw-Exception -Type 'SettingsNotFound' `
+                            -Message 'Settings of specified type not found in file' `
+                            -Property @{ 'FilePath' = $FilePath ;
+                                         'GlobalType' = $GlobalType ;
+                                         'SettingsJSON' = $SettingsJSON }
+        }
+
+        foreach($Key in $GlobalTypeHashTable.Keys)
+        {
+            $ReturnInformation.Add($key, $GlobalTypeHashTable."$Key") | Out-Null
+        }
+                
+    }
+    catch
+    {
+        Write-Exception -Exception $_ -Stream Warning
     }
 
-    return (ConvertTo-JSON -InputObject $Variables -Compress)
-}
-<#
-    .Synopsis
-        Returns all Schedules in a JSON settings file
-
-    .Parameter FilePath
-        The path to the JSON file containing SMA settings
-#>
-Function Get-SmaSchedulesFromFile
-{
-    Param([Parameter(Mandatory=$True)][string] $FilePath)
-
-    $FileContent = Get-Content $FilePath
-    $Variables = ConvertFrom-PSCustomObject ((ConvertFrom-Json ((Get-Content -Path $FilePath) -as [String])).Schedules)
-
-    if(Test-IsNullOrEmpty $Variables.Keys)
-    {
-        Write-Warning -Message "No Schedules root in folder"
-    }
-
-    return (ConvertTo-JSON -InputObject $Variables -Compress)
+    return (ConvertTo-JSON $ReturnInformation -Compress)
 }
 <#
     .Synopsis
@@ -177,7 +194,9 @@ Function Get-GitRepositoryAssetName
     Param([Parameter(Mandatory=$false)][string] $Path)
 
     $Assets = @{ 'Variable' = @() ;
-                 'Schedule' = @() }
+                 'Schedule' = @() ;
+				 'Connection' = @()	
+				}
     $AssetFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
                                   -Recurse:$True `
@@ -186,13 +205,29 @@ Function Get-GitRepositoryAssetName
     
     foreach($AssetFile in $AssetFiles)
     {
-        Foreach($VariableName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON (Get-SmaVariablesFromFile -FilePath $AssetFile.FullName))).Keys)
+        $VariableJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Variables
+        $ScheduleJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Schedules
+		$ConnectionJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Connections
+        if($VariableJSON)
         {
-            $Assets.Variable += $VariableName
+            Foreach($VariableName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $VariableJSON)).Keys)
+            {
+                $Assets.Variable += $VariableName
+            }
         }
-        Foreach($ScheduleName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON (Get-SmaSchedulesFromFile -FilePath $AssetFile.FullName))).Keys)
+        if($ScheduleJSON)
         {
-            $Assets.Schedule += $ScheduleName
+            Foreach($ScheduleName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $ScheduleJSON)).Keys)
+            {
+                $Assets.Schedule += $ScheduleName
+            }
+        }
+		if($ConnectionJSON)
+        {
+            Foreach($ConnectionName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $ConnectionJSON)).Keys)
+            {
+                $Assets.Connection += $ConnectionName
+            }
         }
     }
     Return $Assets

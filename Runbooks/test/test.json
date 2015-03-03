@@ -2,4 +2,11 @@
     "Variables":  {
 
                   }
+    "Connections":{
+					"ConnectionType": "First"
+					"Host" : "",
+					"UserName" : "",
+					"Password" : "",
+					"ConnectionType" : "Next",
+				  }
 }

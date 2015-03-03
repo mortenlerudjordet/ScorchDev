@@ -1,26 +1,5 @@
 ﻿<#
     .Synopsis
-        Returns all connections in a JSON settings file
-
-    .Parameter FilePath
-        The path to the JSON file containing SMA settings
-#>
-Function Get-SmaConnectionsFromFile
-{
-    Param([Parameter(Mandatory=$false)][string] $FilePath)
-
-    $FileContent = Get-Content $FilePath
-    $Connections = ConvertFrom-PSCustomObject ((ConvertFrom-Json ((Get-Content -Path $FilePath) -as [String])).Connections)
-
-    if(Test-IsNullOrEmpty $Connections.Keys)
-    {
-        Write-Warning -Message "No connections root in folder"
-    }
-
-    return (ConvertTo-JSON -InputObject $Connections -Compress)
-}
-<#
-    .Synopsis
         Looks for the tag workflow in a file and returns the next string
     
     .Parameter FilePath
@@ -152,7 +131,7 @@ Function Get-SmaGlobalFromFile
         Write-Exception -Exception $_ -Stream Warning
     }
 
-    return (ConvertTo-JSON $ReturnInformation)
+    return (ConvertTo-JSON $ReturnInformation -Compress)
 }
 <#
     .Synopsis
@@ -225,6 +204,7 @@ Function Get-GitRepositoryAssetName
     {
         $VariableJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Variables
         $ScheduleJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Schedules
+		$ConnectionJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Connections
         if($VariableJSON)
         {
             Foreach($VariableName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $VariableJSON)).Keys)
@@ -239,9 +219,12 @@ Function Get-GitRepositoryAssetName
                 $Assets.Schedule += $ScheduleName
             }
         }
-		Foreach($ScheduleName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON (Get-SmaConnectionFromFile -FilePath $AssetFile.FullName))).Keys)
+		if($ConnectionJSON)
         {
-            $Assets.Connection += $ConnectionName
+            Foreach($ConnectionName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $ConnectionJSON)).Keys)
+            {
+                $Assets.Connection += $ConnectionName
+            }
         }
     }
     Return $Assets
