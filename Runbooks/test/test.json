@@ -1,12 +1,26 @@
 {
-    "Variables":  {
-
-                  }
-    "Connections":{
-					"ConnectionType": "First"
-					"Host" : "",
-					"UserName" : "",
-					"Password" : "",
-					"ConnectionType" : "Next",
-				  }
+    "Connections":  {
+                        "TestConnection":  {
+                                               "ConnectionType":  {
+                                                            "isEncrypted":  false,
+                                                            "Description":  "",
+                                                            "Value":  "OperationsManager"
+                                                        },
+											   "ComputerName":  {
+                                                            "isEncrypted":  false,
+                                                            "Description":  "",
+                                                            "Value":  "lerun.info"
+                                                        },
+												"UserName":  {
+                                                            "isEncrypted":  false,
+                                                            "Description":  "",
+                                                            "Value":  "userN"
+                                                        },
+												"Password":  {
+                                                            "isEncrypted":  true,
+                                                            "Description":  "",
+                                                            "Value":  "PWD"
+                                                        }
+                                           }
+                    }
 }

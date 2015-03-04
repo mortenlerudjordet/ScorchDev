@@ -179,25 +179,77 @@ Workflow Publish-SMASettingsFileChange
 		
 		$Connections = ConvertFrom-PSCustomObject ( ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType "Connections") )
         # initial before moving to functions
-		try 
-		{
-			# Get all connection types in SMA
-			$ConnectionTypes = Get-SmaConnectionType -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-														 -Port $CIVariables.WebservicePort `
-														 -Credential $SMACred |
-														 Select-Object -ExpandProperty Name
-			# Get connection types to create
-			$CreateConnectionTypes =  $Connections.Keys | Where-Object {$_ -eq "ConnectionType"} | Select-Object -ExpandProperty Value
-		}
-		catch
-		{
-			Write-Exception $_ -Stream Warning
-		}
-		# TODO : Compare connection types from JSON fil with connection types available in SMA
-		# If connection type available in SMA, get all variable names for connection type
-		# Create connection type with values in SMA
-		# Handle errors
+		# Get all connection types in SMA
+		$SMAConnectionTypes = Get-SmaConnectionType -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+													 -Port $CIVariables.WebservicePort `
+													 -Credential $SMACred | Select-Object -ExpandProperty Name
 		
+		
+		foreach($ConnectionName in $Connections.Keys)
+		{
+			# Get connection types to create
+			try 
+			{
+				$Connection = $Connections."$ConnectionName"
+				# Check if Connection Type template exists in SMA
+				if($SMAConnectionTypes -contains $Connection.ConnectionType.Value) 
+				{
+					# ConnectionType template is in SMA
+					if( Get-SmaConnection -Name $ConnectionName -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+										  -Port $CIVariables.WebservicePort -Credential $SMACred -ErrorAction SilentlyContinue ) 
+					{
+						# Connection object already exist in SMA
+						$FieldValues = ConvertFrom-PSCustomObject -InputObject $Connection
+						foreach($FieldValue in $FieldValues.Keys) 
+						{
+							# Updating values of the connection object
+							if($FieldValue -ne "ConnectionType")
+							{
+								Write-Debug -Message "Adding ConnectionName: $ConnectionName,ConnectionFieldName: $FieldValue and Value: $($FieldValues."$FieldValue".Value)"
+								Set-SmaConnectionFieldValue -ConnectionName $ConnectionName -ConnectionFieldName $FieldValue `
+															-Value $FieldValues."$FieldValue".Value `
+															-WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+															-Port $CIVariables.WebservicePort -Credential $SMACred -Force	
+							}
+						}
+					}
+					else 
+					{
+						# No Connection object exist in SMA, create new one
+						
+						
+						$FieldValues = ConvertFrom-PSCustomObject -InputObject $Connection
+						$ConnectionFieldValues = New-Object -TypeName psobject
+						foreach($FieldValue in $FieldValues.Keys) 
+						{
+							# Create custom object to hold connection values
+							if($FieldValue -ne "ConnectionType")
+							{
+								Add-Member -InputObject $ConnectionFieldValues `
+										   -NotePropertyName $FieldValue -NotePropertyValue $FieldValues."$FieldValue".Value
+								Write-Debug -Message "Adding PropertyName: $FieldValue and PropertyValue: $($FieldValues."$FieldValue".Value)"
+							}
+						}
+						# Covert to hash table for passing to New-SmaConnection
+						$CFVhashtable = ConvertFrom-PSCustomObject -InputObject $ConnectionFieldValues
+						New-SmaConnection -Name $ConnectionName -ConnectionTypeName $Connection.ConnectionType.Value `
+										  -ConnectionFieldValues $CFVhashtable
+										  -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+										  -Port $CIVariables.WebservicePort -Credential $SMACred
+					}
+				}
+				else 
+				{
+					# ConnectionType template is not in SMA
+					Write-Verbose -Message "[$($Connection.ConnectionType.Value)] has not been imported in a Integration Module yet. Skipping"
+				}
+			}
+			catch
+			{
+				Write-Exception $_ -Stream Warning
+			}
+			
+		}
     }
     Catch
     {
