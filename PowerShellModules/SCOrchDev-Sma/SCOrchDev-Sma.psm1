@@ -499,6 +499,7 @@ Function Start-SmaRunbookREST
           [Parameter(Mandatory=$False)][pscredential] $Credential)
     
     $null = $(
+        [System.Net.ServicePointManager]::CertificatePolicy = new-object IDontCarePolicy
         $RestMethodParameters = @{ 'URI' = "$($WebserviceEndpoint):$($WebservicePort)/$($TenantID)/Runbooks(guid'$($RunbookId)')/Start" ;
                                     'Method' = 'Post'
                                     'ContentType' = 'application/json;odata=verbose' }
@@ -522,4 +523,94 @@ Function Start-SmaRunbookREST
     )
     return $Result
 }
+<#
+    .Synopsis
+        Returns modules from a target SMA environment
+    
+    .Parameter WebserviceEndpoint
+        The url for the SMA webservice
+
+    .Parameter WebservicePort
+        The port that the SMA webservice is running on.
+
+    .Parameter TenantID
+        The ID of the target tenant
+
+    .Parameter Credential
+        A credential object to use for the request. If not passed this method will use
+        the default credential
+#>
+Function Get-SmaModuleREST
+{
+    Param([Parameter(Mandatory=$False)][string]  $WebserviceEndpoint = 'https://localhost',
+          [Parameter(Mandatory=$False)][string]  $WebservicePort = '9090',
+          [Parameter(Mandatory=$False)][string]  $TenantID = '00000000-0000-0000-0000-000000000000',
+          [Parameter(Mandatory=$False)][pscredential] $Credential)
+    
+    $null = $(
+        [System.Net.ServicePointManager]::CertificatePolicy = new-object IDontCarePolicy
+        $RestMethodParameters = @{ 'URI' = "$($WebserviceEndpoint):$($WebservicePort)/$($TenantID)/Modules" ;
+                                   'Method' = 'Get'
+                                   'ContentType' = 'application/json;odata=verbose' }
+       
+        if($Credential) { $RestMethodParameters.Add('Credential',$Credential) }
+        else { $RestMethodParameters.Add('UseDefaultCredentials', $True) }
+
+        $Result = Invoke-RestMethod @RestMethodParameters
+        $outputArray = @()
+        foreach($object in $Result)
+        {
+            $o = @{ 'ModuleId' = $object.properties.ModuleID.'#text' -as [guid] ;
+                    'CreationTime' = $object.properties.CreationTime.'#text' -as [datetime] ;
+                    'Version' = $object.properties.Version.'#text' -as [int32] ;
+                    'LastModifiedTime' = $object.properties.LastModifiedTime.'#text' -as [datetime] ;
+                    'ModuleName' = $object.properties.ModuleName -as [string] ; }
+            $outputArray += $o
+        }
+    )
+    return $outputArray
+}
+<#
+    .Synopsis
+        Imports a PowerShell module into SMA. Module must be deployed locally
+        and a part of the PSModulePath
+    
+    .Parameter ModuleName
+        The name of the module
+
+    .Parameter WebservicePort
+        The port that the SMA webservice is running on.
+
+    .Parameter Credential
+        A credential object to use for the request. If not passed this method will use
+        the default credential
+#>
+Function Import-SmaPowerShellModule
+{
+    Param([Parameter(Mandatory=$True) ][string]  $ModuleName,
+          [Parameter(Mandatory=$False)][string]  $WebserviceEndpoint = 'https://localhost',
+          [Parameter(Mandatory=$False)][string]  $WebservicePort = '9090',
+          [Parameter(Mandatory=$False)][pscredential] $Credential)
+    
+    $Module = Get-Module -ListAvailable -Name $ModuleName -Refresh
+    $ModuleFolderPath = (Get-Item -Path $Module.Path).Directory.FullName
+
+    $TempDirectory = New-TempDirectory
+    try
+    {
+        $ZipFile = "$TempDirectory\$($ModuleName).zip"
+        New-ZipFile -SourceDir $ModuleFolderPath `
+                    -ZipFilePath $ZipFile `
+                    -OverwriteExisting $True
+        Import-SmaModule -Path $ZipFile `
+                         -WebServiceEndpoint $WebserviceEndpoint `
+                         -Port $WebservicePort `
+                         -Credential $Credential
+    }
+    finally
+    {
+        Remove-Item $TempDirectory -Force -Recurse
+    }
+}
+
 Export-ModuleMember -Function * -Verbose:$false -Debug:$False

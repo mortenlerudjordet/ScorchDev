@@ -87,7 +87,13 @@ Workflow Invoke-GitRepositorySync
             }
             foreach($Module in $ReturnInformation.ModuleFiles)
             {
-                Update-LocalModuleMetadata -ModuleName $Module
+                $ModuleName = (Test-ModuleManifest -Path $Module).Name
+                $PowerShellModuleInformation = Import-SmaPowerShellModule -ModuleName $ModuleName `
+                                                                          -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
+                                                                          -WebservicePort $CIVariables.WebservicePort `
+                                                                          -Credential $SMACred
+                SetAutomationModuleActivityMetadata -ModuleName $PowerShellModuleInformation.ModuleName `
+                                                    -ModuleVersion $PowerShellModuleInformation.Version
                 Checkpoint-Workflow
             }
             if($ReturnInformation.CleanRunbooks)
@@ -98,6 +104,11 @@ Workflow Invoke-GitRepositorySync
             if($ReturnInformation.CleanAssets)
             {
                 Remove-SmaOrphanAsset -RepositoryName $RepositoryName
+                Checkpoint-Workflow
+            }
+            if($ReturnInformation.CleanModules)
+            {
+                Remove-SmaOrphanModule
                 Checkpoint-Workflow
             }
             if($ReturnInformation.ModuleFiles)

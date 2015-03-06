@@ -72,7 +72,8 @@ Function New-SmaChangesetTagLine
         $NewVersion = $True
     }
     return (ConvertTo-JSON -InputObject @{'TagLine' = $TagLine ;
-										  'NewVersion' = $NewVersion } -Compress)
+                                          'NewVersion' = $NewVersion } `
+                           -Compress)
 }
 <#
     .Synopsis
@@ -153,7 +154,7 @@ Function Set-SmaRepositoryInformationCommitVersion
     $_RepositoryInformation = (ConvertFrom-JSON $RepositoryInformation)
     $_RepositoryInformation."$RepositoryName".CurrentCommit = $Commit
 
-    return (ConvertTo-Json -InputObject $_RepositoryInformation -Compress)
+    return (ConvertTo-Json $_RepositoryInformation -Compress)
 }
 Function Get-GitRepositoryWorkflowName
 {
@@ -251,6 +252,7 @@ Function Group-RepositoryFile
 					'IntegrationModules' = @() ;
                     'CleanRunbooks' = $False ;
                     'CleanAssets' = $False ;
+                    'CleanModules' = $False ;
                     'ModulesUpdated' = $False }
 
     # Process PS1 Files
@@ -370,7 +372,10 @@ Function Group-RepositoryFile
 						break
 					}
             }
-            if($ReturnObj.UpdatePSModules) { break }
+            else
+            {
+                $ReturnObj.CleanModules = $True
+            }
         }
     }
     catch
@@ -450,8 +455,9 @@ Function Find-GitRepositoryChange
                     'Files' = @() }
     
     $NewCommit = (git rev-parse --short HEAD)
-    $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $RepositoryInformation.CurrentCommit, $null -FilterScript { $_ -ne -1 }) $NewCommit
-    $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() ; AllRunbookFiles = @()}
+    $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $RepositoryInformation.CurrentCommit, (git rev-list --max-parents=0 HEAD) -FilterScript { $_ -ne -1 }) $NewCommit
+    $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() }
+
     Foreach($File in $ModifiedFiles)
     {
         if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
