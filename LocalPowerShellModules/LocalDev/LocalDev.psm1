@@ -623,4 +623,114 @@ Function Set-AutomationActivityMetadata
                                 'ListOfCommands' = $ListOfCommands }
     Write-Verbose -Message "$Inputs"
 }
+<#
+    .Synopsis
+        Creates a connection in a json file. When this is commited the
+        connection object will be created in SMA through continuous integration
+		For this to work the integration module must be already imported into SMA
+
+    .Parameter ConnectionFilePath
+        The path to the file to store this connection in. If not passed it is
+        assumed you want to store it in the same file you did last time
+
+    .Parameter Name
+        The name of the connection to create. 
+        connections will be named in the format
+
+        Prefix-Name
+
+    .Parameter Prefix
+        The prefix of the connection to create. If not passed it will default
+        to the name of the connection file you are storing it in
+        connections will be named in the format
+
+        Prefix-Name
+    
+    .Parameter Value
+        The value to store in the object. If a non primative is passed it
+        will be converted into a string using convertto-json
+
+    .Parameter Description
+        The description of the connection to store in SMA
+
+    .ConnectionType
+        Name of the connection type of a integration module
+
+#>
+Function Set-LocalDevAutomationConnection
+{
+    Param(
+        [Parameter(Mandatory=$False)] $SettingsFilePath,
+        [Parameter(Mandatory=$True)]  $Name,
+        [Parameter(Mandatory=$True)]  $Value,
+        [Parameter(Mandatory=$False)] $Prefix = [System.String]::Empty,
+        [Parameter(Mandatory=$False)] $Description = [System.String]::Empty,
+        [Parameter(Mandatory=$False)] $ConnectionType = [System.String]::Empty
+        )
+    if(-not $SettingsFilePath)
+    {
+        if(-not $Script:CurrentSettingsFile)
+        {
+            Throw-Exception -Type 'connection File Not Set' `
+                            -Message 'The connection file path has not been set'
+        }
+        $SettingsFilePath = $Script:CurrentSettingsFile
+    }
+    else
+    {
+        if($Script:CurrentSettingsFile -ne $SettingsFilePath)
+        {
+            Write-Warning -Message "Setting Default connection file to [$SettingsFilePath]" `
+                          -WarningAction 'Continue'
+            $Script:CurrentSettingsFile = $SettingsFilePath
+        }
+    }
+
+    if(Test-IsNullOrEmpty $Prefix)
+    {
+        if($SettingsFilePath -Match '.*\\(.+)\.json$')
+        {
+            $Prefix = $Matches[1]
+        }
+        else
+        {
+            Throw-Exception -Type 'UndeterminableDefaultPrefix' `
+                            -Message 'Could not determine what the default prefix should be' `
+                            -Property @{ 'SettingsFilePath' = $SettingsFilePath }
+        }
+    }
+
+    if($Name -notlike "$($Prefix)-*")
+    {
+        $Name = "$($Prefix)-$($Name)"
+    }
+
+    $SettingsVars = ConvertFrom-JSON -InputObject ((Get-Content -Path $SettingsFilePath) -as [String])
+    if(-not $SettingsVars) { $SettingsVars = @{} }
+    else
+    {
+        $SettingsVars = ConvertFrom-PSCustomObject $SettingsVars
+    }
+    if(-not $SettingsVars.ContainsKey('Connections'))
+    {
+        $SettingsVars.Add('Connections',@{}) | out-null
+    }
+    
+    if($SettingsVars.Connections.GetType().name -eq 'PSCustomObject') { $SettingsVars.Connections = ConvertFrom-PSCustomObject $SettingsVars.Connections }
+    if($SettingsVars.Connections.ContainsKey($Name))
+    {
+        $SettingsVars.Connections."$Name".Value = $Value
+        if($Description) { $SettingsVars.Connections."$Name".Description = $Description }
+        if($ConnectionType)   { $SettingsVars.Connections."$Name".ConnectionType = $ConnectionType }
+    }
+    else
+    {
+        $SettingsVars.Connections.Add($Name, @{ 'Value' = $Value ;
+                                                'Description' = $Description ;
+                                                'ConnectionType' = $ConnectionType })
+    }
+    
+    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
+    Read-SmaJSONVariables $SettingsFilePath
+}
 Export-ModuleMember -Function * -Verbose:$false
