@@ -87,8 +87,7 @@ Function Get-SmaGlobalFromFile
     Param([Parameter(Mandatory=$false)]
           [string] 
           $FilePath,
-          
-          [ValidateSet('Variables','Schedules')]
+          [ValidateSet('Variables','Schedules','Connections')]
           [Parameter(Mandatory=$false)]
           [string] 
           $GlobalType )
@@ -96,9 +95,9 @@ Function Get-SmaGlobalFromFile
     $ReturnInformation = @{}
     try
     {
-        $SettingsJSON = (Get-Content $FilePath) -as [string]
+        $SettingsJSON = (Get-Content -Path $FilePath) -as [string]
         $SettingsObject = ConvertFrom-Json -InputObject $SettingsJSON
-        $SettingsHashTable = ConvertFrom-PSCustomObject $SettingsObject
+        $SettingsHashTable = ConvertFrom-PSCustomObject -InputObject $SettingsObject
         
         if(-not ($SettingsHashTable.ContainsKey($GlobalType)))
         {
