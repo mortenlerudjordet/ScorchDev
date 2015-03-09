@@ -646,26 +646,31 @@ Function Set-AutomationActivityMetadata
 
         Prefix-Name
     
-    .Parameter Value
-        The value to store in the object. If a non primative is passed it
-        will be converted into a string using convertto-json
+    .Parameter ConnectionTypeName
+        Name of the connection type from a specific SMA integration module
 
     .Parameter Description
-        The description of the connection to store in SMA
+        The description of the connection object to store in SMA
 
-    .ConnectionType
-        Name of the connection type of a integration module
-
+    .ConnectionVariables
+        All variables that are needed to greate the connection object for the integration module
+        Look at the integration module *-automation.json file to find what value must be included
+        Create a hashtable and pass in the variables the connection object needs:
+        $HashTable = @{
+                    'NameConnectionVariable1' = "Value"
+                    'NameConnectionVariable2' = "Value"
+        } 
 #>
 Function Set-LocalDevAutomationConnection
 {
     Param(
         [Parameter(Mandatory=$False)] $SettingsFilePath,
         [Parameter(Mandatory=$True)]  $Name,
-        [Parameter(Mandatory=$True)]  $Value,
+        [Parameter(Mandatory=$True)]  $ConnectionTypeName,
+        [Parameter(Mandatory=$True)]
+        [hashtable]                   $ConnectionVariables,
         [Parameter(Mandatory=$False)] $Prefix = [System.String]::Empty,
-        [Parameter(Mandatory=$False)] $Description = [System.String]::Empty,
-        [Parameter(Mandatory=$False)] $ConnectionType = [System.String]::Empty
+        [Parameter(Mandatory=$False)] $Description = [System.String]::Empty
         )
     if(-not $SettingsFilePath)
     {
@@ -719,15 +724,21 @@ Function Set-LocalDevAutomationConnection
     if($SettingsVars.Connections.GetType().name -eq 'PSCustomObject') { $SettingsVars.Connections = ConvertFrom-PSCustomObject $SettingsVars.Connections }
     if($SettingsVars.Connections.ContainsKey($Name))
     {
-        $SettingsVars.Connections."$Name".Value = $Value
-        if($Description) { $SettingsVars.Connections."$Name".Description = $Description }
-        if($ConnectionType)   { $SettingsVars.Connections."$Name".ConnectionType = $ConnectionType }
+        foreach($ConnectionVariable in $ConnectionVariables.Keys) 
+        {            
+            $SettingsVars.Connections."$Name"."$ConnectionVariable" = $ConnectionVariables."$ConnectionVariable"
+        }
+        $SettingsVars.Connections."$Name".ConnectionTypeName = $ConnectionTypeName
     }
     else
     {
-        $SettingsVars.Connections.Add($Name, @{ 'Value' = $Value ;
-                                                'Description' = $Description ;
-                                                'ConnectionType' = $ConnectionType })
+        $NewConnection = @{}
+        foreach($ConnectionVariable in $ConnectionVariables.Keys) 
+        {
+            $NewConnection.Add($ConnectionVariable, $($ConnectionVariables."$ConnectionVariable"))
+        }
+        $NewConnection.Add('ConnectionTypeName', $ConnectionTypeName)
+        $SettingsVars.Connections.Add($Name, $NewConnection)
     }
     
     Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)

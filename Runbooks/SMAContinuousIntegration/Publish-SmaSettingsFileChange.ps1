@@ -28,7 +28,7 @@ Workflow Publish-SMASettingsFileChange
 
     Try
     {
-        $Variables = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Variables))
+        $Variables = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $Files.FullName -GlobalType Variables))
         foreach($VariableName in $Variables.Keys)
         {
             Write-Verbose -Message "[$VariableName] Updating"
@@ -42,17 +42,17 @@ Workflow Publish-SMASettingsFileChange
             if(Test-IsNullOrEmpty $SmaVariable.VariableId.Guid)
             {
                 Write-Verbose -Message "[$($VariableName)] is a New Variable"
-                $VariableDescription = "$($Variable.Description)`n`r__RepositoryName:$($RepositoryName);CurrentCommit:$($CurrentCommit);__"
+                #$VariableDescription = "$($Variable.Description)`n`r__RepositoryName:$($RepositoryName);CurrentCommit:$($CurrentCommit);__"
                 $NewVersion = $True
             }
             else
             {
                 Write-Verbose -Message "[$($VariableName)] is an existing Variable"
-                $TagUpdate = ConvertFrom-JSON( New-SmaChangesetTagLine -TagLine $SmaVariable.Description`
-                                                         -CurrentCommit $CurrentCommit `
-                                                         -RepositoryName $RepositoryName )
-                $VariableDescription = "$($TagUpdate.TagLine)"
-                $NewVersion = $TagUpdate.NewVersion
+                #$TagUpdate = ConvertFrom-JSON( New-SmaChangesetTagLine -TagLine $SmaVariable.Description`
+                #                                         -CurrentCommit $CurrentCommit `
+                #                                         -RepositoryName $RepositoryName )
+                #$VariableDescription = "$($TagUpdate.TagLine)"
+                $NewVersion = $False
             }
             if($NewVersion)
             {
@@ -79,12 +79,40 @@ Workflow Publish-SMASettingsFileChange
             }
             else
             {
-                Write-Verbose -Message "[$($VariableName)] Is not a new version. Skipping"
+               Write-Verbose -Message "[$($VariableName)] Is not a new version. Overwriting"
+                
+                # Remove existing variables in SMA so we can re-add them in
+                $RemovedVariable = Remove-SmaVariable -Name $VariableName `
+															   -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+															   -Port $CIVariables.WebservicePort `
+															   -Credential $SMACred `
+
+
+                if(ConvertTo-Boolean $Variable.isEncrypted)
+				{
+					$CreateEncryptedVariable = Set-SmaVariable -Name $VariableName `
+															   -Value $Variable.Value `
+															   -Description $VariableDescription `
+															   -Encrypted `
+															   -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+															   -Port $CIVariables.WebservicePort `
+															   -Credential $SMACred `
+															   -Force
+				}
+				else
+				{
+					$CreateNonEncryptedVariable = Set-SmaVariable -Name $VariableName `
+																  -Value $Variable.Value `
+																  -Description $VariableDescription `
+																  -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+																  -Port $CIVariables.WebservicePort `
+																  -Credential $SMACred
+				}
             }
             Write-Verbose -Message "[$($VariableName)] Finished Updating"
         }
 
-        $Schedules = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Schedules))
+        $Schedules = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $Files.FullName -GlobalType Schedules))
         foreach($ScheduleName in $Schedules.Keys)
         {
             Write-Verbose -Message "[$ScheduleName] Updating"
@@ -177,7 +205,7 @@ Workflow Publish-SMASettingsFileChange
             Write-Verbose -Message "[$($ScheduleName)] Finished Updating"
         }
 		
-		$Connections = ConvertFrom-PSCustomObject ( ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType "Connections") )
+		$Connections = ConvertFrom-PSCustomObject ( ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $Files.FullName -GlobalType Connections) )
         # initial before moving to functions
 		# Get all connection types in SMA
 		$SMAConnectionTypes = Get-SmaConnectionType -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
@@ -192,7 +220,7 @@ Workflow Publish-SMASettingsFileChange
 			{
 				$Connection = $Connections."$ConnectionName"
 				# Check if Connection Type template exists in SMA
-				if($SMAConnectionTypes -contains $Connection.ConnectionType.Value) 
+				if($SMAConnectionTypes -contains $Connection.ConnectionTypeName) 
 				{
 					# ConnectionType template is in SMA
 					if( Get-SmaConnection -Name $ConnectionName -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
@@ -203,11 +231,11 @@ Workflow Publish-SMASettingsFileChange
 						foreach($FieldValue in $FieldValues.Keys) 
 						{
 							# Updating values of the connection object
-							if($FieldValue -ne "ConnectionType")
+							if($FieldValue -ne "ConnectionTypeName")
 							{
-								Write-Debug -Message "Adding ConnectionName: $ConnectionName,ConnectionFieldName: $FieldValue and Value: $($FieldValues."$FieldValue".Value)"
+								Write-Debug -Message "Adding ConnectionName: $ConnectionName,ConnectionFieldName: $FieldValue and Value: $($FieldValues."$FieldValue")"
 								Set-SmaConnectionFieldValue -ConnectionName $ConnectionName -ConnectionFieldName $FieldValue `
-															-Value $FieldValues."$FieldValue".Value `
+															-Value $FieldValues."$FieldValue" `
 															-WebServiceEndpoint $CIVariables.WebserviceEndpoint `
 															-Port $CIVariables.WebservicePort -Credential $SMACred -Force	
 							}
@@ -223,17 +251,17 @@ Workflow Publish-SMASettingsFileChange
 						foreach($FieldValue in $FieldValues.Keys) 
 						{
 							# Create custom object to hold connection values
-							if($FieldValue -ne "ConnectionType")
+							if($FieldValue -ne "ConnectionTypeName")
 							{
 								Add-Member -InputObject $ConnectionFieldValues `
-										   -NotePropertyName $FieldValue -NotePropertyValue $FieldValues."$FieldValue".Value
-								Write-Debug -Message "Adding PropertyName: $FieldValue and PropertyValue: $($FieldValues."$FieldValue".Value)"
+										   -NotePropertyName $FieldValue -NotePropertyValue $FieldValues."$FieldValue"
+								Write-Debug -Message "Adding PropertyName: $FieldValue and PropertyValue: $($FieldValues."$FieldValue")"
 							}
 						}
 						# Covert to hash table for passing to New-SmaConnection
 						$CFVhashtable = ConvertFrom-PSCustomObject -InputObject $ConnectionFieldValues
-						New-SmaConnection -Name $ConnectionName -ConnectionTypeName $Connection.ConnectionType.Value `
-										  -ConnectionFieldValues $CFVhashtable
+						New-SmaConnection -Name $ConnectionName -ConnectionTypeName $Connection.ConnectionTypeName `
+										  -ConnectionFieldValues $CFVhashtable `
 										  -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
 										  -Port $CIVariables.WebservicePort -Credential $SMACred
 					}
