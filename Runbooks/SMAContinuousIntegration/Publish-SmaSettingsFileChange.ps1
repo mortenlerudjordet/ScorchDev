@@ -28,7 +28,7 @@ Workflow Publish-SMASettingsFileChange
 
     Try
     {
-        $Variables = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $Files.FullName -GlobalType Variables))
+        $Variables = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Variables))
         foreach($VariableName in $Variables.Keys)
         {
             Write-Verbose -Message "[$VariableName] Updating"
@@ -112,7 +112,7 @@ Workflow Publish-SMASettingsFileChange
             Write-Verbose -Message "[$($VariableName)] Finished Updating"
         }
 
-        $Schedules = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $Files.FullName -GlobalType Schedules))
+        $Schedules = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Schedules))
         foreach($ScheduleName in $Schedules.Keys)
         {
             Write-Verbose -Message "[$ScheduleName] Updating"
@@ -205,7 +205,7 @@ Workflow Publish-SMASettingsFileChange
             Write-Verbose -Message "[$($ScheduleName)] Finished Updating"
         }
 		
-		$Connections = ConvertFrom-PSCustomObject ( ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $Files.FullName -GlobalType Connections) )
+		$Connections = ConvertFrom-PSCustomObject ( ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Connections) )
         # initial before moving to functions
 		# Get all connection types in SMA
 		$SMAConnectionTypes = Get-SmaConnectionType -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
@@ -231,7 +231,7 @@ Workflow Publish-SMASettingsFileChange
 						foreach($FieldValue in $FieldValues.Keys) 
 						{
 							# Updating values of the connection object
-							if($FieldValue -ne "ConnectionTypeName")
+							if($FieldValue -ne "ConnectionTypeName" -and $FieldValue -ne "Description")
 							{
 								Write-Debug -Message "Adding ConnectionName: $ConnectionName,ConnectionFieldName: $FieldValue and Value: $($FieldValues."$FieldValue")"
 								Set-SmaConnectionFieldValue -ConnectionName $ConnectionName -ConnectionFieldName $FieldValue `
@@ -251,7 +251,7 @@ Workflow Publish-SMASettingsFileChange
 						foreach($FieldValue in $FieldValues.Keys) 
 						{
 							# Create custom object to hold connection values
-							if($FieldValue -ne "ConnectionTypeName")
+							if($FieldValue -ne "ConnectionTypeName" -and $FieldValue -ne "Description")
 							{
 								Add-Member -InputObject $ConnectionFieldValues `
 										   -NotePropertyName $FieldValue -NotePropertyValue $FieldValues."$FieldValue"
@@ -261,7 +261,7 @@ Workflow Publish-SMASettingsFileChange
 						# Covert to hash table for passing to New-SmaConnection
 						$CFVhashtable = ConvertFrom-PSCustomObject -InputObject $ConnectionFieldValues
 						New-SmaConnection -Name $ConnectionName -ConnectionTypeName $Connection.ConnectionTypeName `
-										  -ConnectionFieldValues $CFVhashtable `
+										  -ConnectionFieldValues $CFVhashtable -Description $Connection.Description `
 										  -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
 										  -Port $CIVariables.WebservicePort -Credential $SMACred
 					}

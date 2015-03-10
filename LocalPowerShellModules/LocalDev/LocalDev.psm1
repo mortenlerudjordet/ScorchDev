@@ -729,6 +729,7 @@ Function Set-LocalDevAutomationConnection
             $SettingsVars.Connections."$Name"."$ConnectionVariable" = $ConnectionVariables."$ConnectionVariable"
         }
         $SettingsVars.Connections."$Name".ConnectionTypeName = $ConnectionTypeName
+        if($Description) { $SettingsVars.Connections."$Name".Description = $Description }
     }
     else
     {
@@ -738,6 +739,7 @@ Function Set-LocalDevAutomationConnection
             $NewConnection.Add($ConnectionVariable, $($ConnectionVariables."$ConnectionVariable"))
         }
         $NewConnection.Add('ConnectionTypeName', $ConnectionTypeName)
+        $NewConnection.Add('Description', $Description)
         $SettingsVars.Connections.Add($Name, $NewConnection)
     }
     
