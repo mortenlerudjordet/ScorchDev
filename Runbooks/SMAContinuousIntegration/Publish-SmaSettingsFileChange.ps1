@@ -28,91 +28,76 @@ Workflow Publish-SMASettingsFileChange
 
     Try
     {
-        $Variables = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Variables))
+                $VariablesJSON = Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Variables
+        $Variables = ConvertFrom-PSCustomObject -InputObject (ConvertFrom-Json -InputObject $VariablesJSON)
         foreach($VariableName in $Variables.Keys)
         {
-            Write-Verbose -Message "[$VariableName] Updating"
-            $Variable = $Variables."$VariableName"
-            $ErrorActionPreference = [System.Management.Automation.ActionPreference]::SilentlyContinue
-            $SmaVariable = Get-SmaVariable -Name $VariableName `
-                                           -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                           -Port $CIVariables.WebservicePort `
-                                           -Credential $SMACred
-            $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
-            if(Test-IsNullOrEmpty $SmaVariable.VariableId.Guid)
+            Try
             {
-                Write-Verbose -Message "[$($VariableName)] is a New Variable"
-                #$VariableDescription = "$($Variable.Description)`n`r__RepositoryName:$($RepositoryName);CurrentCommit:$($CurrentCommit);__"
-                $NewVersion = $True
-            }
-            else
-            {
-                Write-Verbose -Message "[$($VariableName)] is an existing Variable"
-                #$TagUpdate = ConvertFrom-JSON( New-SmaChangesetTagLine -TagLine $SmaVariable.Description`
-                #                                         -CurrentCommit $CurrentCommit `
-                #                                         -RepositoryName $RepositoryName )
-                #$VariableDescription = "$($TagUpdate.TagLine)"
-                $NewVersion = $False
-            }
-            if($NewVersion)
-            {
-                if(ConvertTo-Boolean $Variable.isEncrypted)
+                Write-Verbose -Message "[$VariableName] Updating"
+                $Variable = $Variables."$VariableName"
+                $ErrorActionPreference = [System.Management.Automation.ActionPreference]::SilentlyContinue
+                $SmaVariable = Get-SmaVariable -Name $VariableName `
+                                               -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                               -Port $CIVariables.WebservicePort `
+                                               -Credential $SMACred
+                $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+                if(Test-IsNullOrEmpty -String $SmaVariable.VariableId.Guid)
                 {
-                    $CreateEncryptedVariable = Set-SmaVariable -Name $VariableName `
-													           -Value $Variable.Value `
-														       -Description $VariableDescription `
-                                                               -Encrypted `
-														       -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                                               -Port $CIVariables.WebservicePort `
-                                                               -Credential $SMACred `
-                                                               -Force
+                    Write-Verbose -Message "[$($VariableName)] is a New Variable"
+                    $VariableDescription = "$($Variable.Description)`n`r__RepositoryName:$($RepositoryName);CurrentCommit:$($CurrentCommit);__"
+                    $NewVersion = $True
                 }
                 else
                 {
-                    $CreateNonEncryptedVariable = Set-SmaVariable -Name $VariableName `
-													              -Value $Variable.Value `
-														          -Description $VariableDescription `
-														          -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                                                  -Port $CIVariables.WebservicePort `
-                                                                  -Credential $SMACred
+                    Write-Verbose -Message "[$($VariableName)] is an existing Variable"
+                    $TagUpdateJSON = New-SmaChangesetTagLine -TagLine $SmaVariable.Description`
+                                                             -CurrentCommit $CurrentCommit `
+                                                             -RepositoryName $RepositoryName
+                    $TagUpdate = ConvertFrom-Json -InputObject $TagUpdateJSON
+                    $VariableDescription = "$($TagUpdate.TagLine)"
+                    $NewVersion = $TagUpdate.NewVersion
                 }
+                if($NewVersion)
+                {
+                    $SmaVariableParameters = @{
+                        'Name' = $VariableName ;
+                        'Value' = $Variable.Value ;
+                        'Description' = $VariableDescription ;
+                        'WebServiceEndpoint' = $CIVariables.WebserviceEndpoint ;
+                        'Port' = $CIVariables.WebservicePort ;
+                        'Credential' = $SMACred ;
+                        'Force' = $True ;
+                    }
+                    if(ConvertTo-Boolean -InputString $Variable.isEncrypted)
+                    {
+                        $CreateEncryptedVariable = Set-SmaVariable @SmaVariableParameters `
+                                                                   -Encrypted
+                    }
+                    else
+                    {
+                        $CreateEncryptedVariable = Set-SmaVariable @SmaVariableParameters
+                    }
+                }
+                else
+                {
+                    Write-Verbose -Message "[$($VariableName)] Is not a new version. Skipping"
+                }
+                Write-Verbose -Message "[$($VariableName)] Finished Updating"
             }
-            else
+            Catch
             {
-               Write-Verbose -Message "[$($VariableName)] Is not a new version. Overwriting"
-                
-                # Remove existing variables in SMA so we can re-add them in
-                $RemovedVariable = Remove-SmaVariable -Name $VariableName `
-															   -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-															   -Port $CIVariables.WebservicePort `
-															   -Credential $SMACred `
-
-
-                if(ConvertTo-Boolean $Variable.isEncrypted)
-				{
-					$CreateEncryptedVariable = Set-SmaVariable -Name $VariableName `
-															   -Value $Variable.Value `
-															   -Description $VariableDescription `
-															   -Encrypted `
-															   -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-															   -Port $CIVariables.WebservicePort `
-															   -Credential $SMACred `
-															   -Force
-				}
-				else
-				{
-					$CreateNonEncryptedVariable = Set-SmaVariable -Name $VariableName `
-																  -Value $Variable.Value `
-																  -Description $VariableDescription `
-																  -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-																  -Port $CIVariables.WebservicePort `
-																  -Credential $SMACred
-				}
+                $Exception = New-Exception -Type 'VariablePublishFailure' `
+                                           -Message 'Failed to publish a variable to SMA' `
+                                           -Property @{
+                    'ErrorMessage' = Convert-ExceptionToString $_ ;
+                    'VariableName' = $VariableName ;
+                }
+                Write-Warning -Message $Exception -WarningAction Continue
             }
-            Write-Verbose -Message "[$($VariableName)] Finished Updating"
         }
-
-        $Schedules = ConvertFrom-PSCustomObject (ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Schedules))
+        $SchedulesJSON = Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Schedules
+        $Schedules = ConvertFrom-PSCustomObject -InputObject (ConvertFrom-Json -InputObject $SchedulesJSON)
         foreach($ScheduleName in $Schedules.Keys)
         {
             Write-Verbose -Message "[$ScheduleName] Updating"
@@ -125,7 +110,7 @@ Workflow Publish-SMASettingsFileChange
                                                -Port $CIVariables.WebservicePort `
                                                -Credential $SMACred
                 $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
-                if(Test-IsNullOrEmpty $SmaSchedule.ScheduleId.Guid)
+                if(Test-IsNullOrEmpty -String $SmaSchedule.ScheduleId.Guid)
                 {
                     Write-Verbose -Message "[$($ScheduleName)] is a New Schedule"
                     $ScheduleDescription = "$($Schedule.Description)`n`r__RepositoryName:$($RepositoryName);CurrentCommit:$($CurrentCommit);__"
@@ -134,9 +119,10 @@ Workflow Publish-SMASettingsFileChange
                 else
                 {
                     Write-Verbose -Message "[$($ScheduleName)] is an existing Schedule"
-                    $TagUpdate = ConvertFrom-JSON( New-SmaChangesetTagLine -TagLine $SmaVariable.Description`
-                                                             -CurrentCommit $CurrentCommit `
-                                                             -RepositoryName $RepositoryName )
+                    $TagUpdateJSON = New-SmaChangesetTagLine -TagLine $SmaVariable.Description`
+                                                         -CurrentCommit $CurrentCommit `
+                                                         -RepositoryName $RepositoryName
+                    $TagUpdate = ConvertFrom-Json -InputObject $TagUpdateJSON
                     $ScheduleDescription = "$($TagUpdate.TagLine)"
                     $NewVersion = $TagUpdate.NewVersion
                 }
@@ -152,38 +138,41 @@ Workflow Publish-SMASettingsFileChange
                                                       -Port $CIVariables.WebservicePort `
                                                       -Credential $SMACred
 
-                    if(Test-IsNullOrEmpty $CreateSchedule)
+                    if(Test-IsNullOrEmpty -String $CreateSchedule)
                     {
                         Throw-Exception -Type 'ScheduleFailedToCreate' `
                                         -Message 'Failed to create the schedule' `
-                                        -Property @{ 'ScheduleName' = $ScheduleName ;
-                                                     'Description' = $ScheduleDescription;
-                                                     'ScheduleType' = 'DailySchedule' ;
-                                                     'DayInterval' = $Schedule.DayInterval ;
-                                                     'StartTime' = $Schedule.NextRun ;
-                                                     'ExpiryTime' = $Schedule.ExpirationTime ;
-                                                     'WebServiceEndpoint' = $CIVariables.WebserviceEndpoint ;
-                                                     'Port' = $CIVariables.WebservicePort ;
-                                                     'Credential' = $SMACred.UserName }
+                                        -Property @{
+                            'ScheduleName'     = $ScheduleName
+                            'Description'      = $ScheduleDescription
+                            'ScheduleType'     = 'DailySchedule'
+                            'DayInterval'      = $Schedule.DayInterval
+                            'StartTime'        = $Schedule.NextRun
+                            'ExpiryTime'       = $Schedule.ExpirationTime
+                            'WebServiceEndpoint' = $CIVariables.WebserviceEndpoint
+                            'Port'             = $CIVariables.WebservicePort
+                            'Credential'       = $SMACred.UserName
+                        }
                     }
                     try
                     {
                         $Parameters   = ConvertFrom-PSCustomObject -InputObject $Schedule.Parameter `
                                                                    -MemberType NoteProperty `
-
-                        $RunbookStart = Start-SmaRunbook -Name $schedule.RunbookName `
+                        $RunbookStart = Start-SmaRunbook -Name $Schedule.RunbookName `
                                                          -ScheduleName $ScheduleName `
                                                          -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
                                                          -Port $CIVariables.WebservicePort `
                                                          -Parameters $Parameters `
                                                          -Credential $SMACred
-                        if(Test-IsNullOrEmpty $RunbookStart)
+                        if(Test-IsNullOrEmpty -String $RunbookStart)
                         {
                             Throw-Exception -Type 'ScheduleFailedToSet' `
                                             -Message 'Failed to set the schedule on the target runbook' `
-                                            -Property @{ 'ScheduleName' = $ScheduleName ;
-                                                         'RunbookName' = $Schedule.RunbookName ; 
-                                                         'Parameters' = $(ConvertTo-Json $Parameters) }
+                                            -Property @{
+                                'ScheduleName' = $ScheduleName
+                                'RunbookName' = $Schedule.RunbookName
+                                'Parameters' = $(ConvertTo-Json -InputObject $Parameters)
+                            }
                         }
                     }
                     catch
@@ -193,19 +182,19 @@ Workflow Publish-SMASettingsFileChange
                                            -Port $CIVariables.WebservicePort `
                                            -Credential $SMACred `
                                            -Force
-                        Write-Exception $_ -Stream Warning
+                        Write-Exception -Exception $_ -Stream Warning
                     }
-                                                  
                 }
             }
             catch
             {
-                Write-Exception $_ -Stream Warning
+                Write-Exception -Exception $_ -Stream Warning
             }
             Write-Verbose -Message "[$($ScheduleName)] Finished Updating"
         }
 		
-		$Connections = ConvertFrom-PSCustomObject ( ConvertFrom-JSON (Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Connections) )
+		$ConnectionsJSON = Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Connections
+        $Connections = ConvertFrom-PSCustomObject -InputObject (ConvertFrom-Json -InputObject $ConnectionsJSON)
         # initial before moving to functions
 		# Get all connection types in SMA
 		$SMAConnectionTypes = Get-SmaConnectionType -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
@@ -276,7 +265,52 @@ Workflow Publish-SMASettingsFileChange
 			{
 				Write-Exception $_ -Stream Warning
 			}
-			
+			Write-Verbose -Message "[$($ConnectionName)] Finished Updating"
+		}
+
+        $CredentialsJSON = Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Credentials
+        $Credentials = ConvertFrom-PSCustomObject -InputObject (ConvertFrom-Json -InputObject $CredentialsJSON)	
+		foreach($CredentialName in $Credentials.Keys)
+		{
+            Write-Verbose -Message "[$CredentialName] Updating"
+            $Credential = $Credentials."$CredentialName"
+            $ErrorActionPreference = [System.Management.Automation.ActionPreference]::SilentlyContinue
+            $SmaCredential = Get-SmaCredential -Name $CredentialName `
+                                           -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                           -Port $CIVariables.WebservicePort `
+                                           -Credential $SMACred
+            $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+            if(Test-IsNullOrEmpty -String $SmaCredential)
+                {
+                    Write-Verbose -Message "[$($CredentialName)] is a New Credential"
+                    $CredentialDescription = "$($Credential.Description)`n`r__RepositoryName:$($RepositoryName);CurrentCommit:$($CurrentCommit);__"
+                    $NewVersion = $True
+                }
+                else
+                {
+                    Write-Verbose -Message "[$($CredentialName)] is an existing Credential"
+                    $TagUpdateJSON = New-SmaChangesetTagLine -TagLine $SmaCredential.Description`
+                                                             -CurrentCommit $CurrentCommit `
+                                                             -RepositoryName $RepositoryName
+                    $TagUpdate = ConvertFrom-Json -InputObject $TagUpdateJSON
+                    $CredentialDescription = "$($TagUpdate.TagLine)"
+                    $NewVersion = $TagUpdate.NewVersion
+                }
+            if($NewVersion)
+            {
+                [System.Security.SecureString]$pwd = ConvertTo-SecureString $Credential.Password -AsPlainText -Force
+                $Credential = new-object -typename System.Management.Automation.PSCredential -argumentlist @($Credential.UserName, $pwd)
+                Set-SMACredential -Name $CredentialName -Value $Credential `
+                                  -Description $CredentialDescription ` 
+                                  -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                  -Port $CIVariables.WebservicePort `
+                                  -Credential $SMACred
+            }
+            else
+            {
+               Write-Verbose -Message "[$($CredentialName)] Is not a new version. Skipping"
+            }
+            Write-Verbose -Message "[$($CredentialName)] Finished Updating"
 		}
     }
     Catch

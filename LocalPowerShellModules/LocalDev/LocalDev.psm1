@@ -629,7 +629,7 @@ Function Set-AutomationActivityMetadata
         connection object will be created in SMA through continuous integration
 		For this to work the integration module must be already imported into SMA
 
-    .Parameter ConnectionFilePath
+    .Parameter SettingsFilePath
         The path to the file to store this connection in. If not passed it is
         assumed you want to store it in the same file you did last time
 
@@ -741,6 +741,108 @@ Function Set-LocalDevAutomationConnection
         $NewConnection.Add('ConnectionTypeName', $ConnectionTypeName)
         $NewConnection.Add('Description', $Description)
         $SettingsVars.Connections.Add($Name, $NewConnection)
+    }
+    
+    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
+    Read-SmaJSONVariables $SettingsFilePath
+}
+<#
+    .Synopsis
+        Creates a credential in a json file. When this is commited the
+        connection object will be created in SMA through continuous integration
+
+    .Parameter SettingsFilePath
+        The path to the file to store this credential in. If not passed it is
+        assumed you want to store it in the same file you did last time
+
+    .Parameter UserName
+        The user name of the credential object
+
+    .Parameter Prefix
+        The prefix of the connection to create. If not passed it will default
+        to the name of the connection file you are storing it in
+        connections will be named in the format
+
+        Prefix-Name
+    
+    .Parameter Password
+        Password of the credential object 
+
+    .Parameter Description
+        The description of the credential object to store in SMA
+
+#>
+Function Set-LocalDevAutomationCredential
+{
+    Param(
+        [Parameter(Mandatory=$False)] $SettingsFilePath,
+        [Parameter(Mandatory=$True)]  $Name,
+        [Parameter(Mandatory=$True)]  $UserName,
+        [Parameter(Mandatory=$True)]  $Password,
+        [Parameter(Mandatory=$False)] $Prefix = [System.String]::Empty,
+        [Parameter(Mandatory=$False)] $Description = [System.String]::Empty
+        )
+    if(-not $SettingsFilePath)
+    {
+        if(-not $Script:CurrentSettingsFile)
+        {
+            Throw-Exception -Type 'connection File Not Set' `
+                            -Message 'The connection file path has not been set'
+        }
+        $SettingsFilePath = $Script:CurrentSettingsFile
+    }
+    else
+    {
+        if($Script:CurrentSettingsFile -ne $SettingsFilePath)
+        {
+            Write-Warning -Message "Setting Default connection file to [$SettingsFilePath]" `
+                          -WarningAction 'Continue'
+            $Script:CurrentSettingsFile = $SettingsFilePath
+        }
+    }
+
+    if(Test-IsNullOrEmpty $Prefix)
+    {
+        if($SettingsFilePath -Match '.*\\(.+)\.json$')
+        {
+            $Prefix = $Matches[1]
+        }
+        else
+        {
+            Throw-Exception -Type 'UndeterminableDefaultPrefix' `
+                            -Message 'Could not determine what the default prefix should be' `
+                            -Property @{ 'SettingsFilePath' = $SettingsFilePath }
+        }
+    }
+
+    if($Name -notlike "$($Prefix)-*")
+    {
+        $Name = "$($Prefix)-$($Name)"
+    }
+
+    $SettingsVars = ConvertFrom-JSON -InputObject ((Get-Content -Path $SettingsFilePath) -as [String])
+    if(-not $SettingsVars) { $SettingsVars = @{} }
+    else
+    {
+        $SettingsVars = ConvertFrom-PSCustomObject $SettingsVars
+    }
+    if(-not $SettingsVars.ContainsKey('Credentials'))
+    {
+        $SettingsVars.Add('Credentials',@{}) | out-null
+    }
+    
+    if($SettingsVars.Credentials.GetType().name -eq 'PSCustomObject') { $SettingsVars.Credentials = ConvertFrom-PSCustomObject $SettingsVars.Credentials }
+    if($SettingsVars.Credentials.ContainsKey($Name))
+    {
+        $SettingsVars.Credentials."$Name".UserName = $UserName
+        $SettingsVars.Credentials."$Name".Password = $Password
+        if($Description) { $SettingsVars.Credentials."$Name".Description = $Description }
+    }
+    else
+    {
+        $SettingsVars.Credentials.Add($Name, @{ 'UserName' = $UserName ;
+                                                'Password' = $Password ;
+                                                'Description' = $Description})
     }
     
     Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
