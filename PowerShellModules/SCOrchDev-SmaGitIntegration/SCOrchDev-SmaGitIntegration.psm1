@@ -87,7 +87,7 @@ Function Get-SmaGlobalFromFile
     Param([Parameter(Mandatory=$false)]
           [string] 
           $FilePath,
-          [ValidateSet('Variables','Schedules','Connections')]
+          [ValidateSet('Variables','Schedules','Connections','Credentials')]
           [Parameter(Mandatory=$false)]
           [string] 
           $GlobalType )

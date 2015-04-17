@@ -28,7 +28,7 @@ Workflow Publish-SMASettingsFileChange
 
     Try
     {
-                $VariablesJSON = Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Variables
+        $VariablesJSON = Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Variables
         $Variables = ConvertFrom-PSCustomObject -InputObject (ConvertFrom-Json -InputObject $VariablesJSON)
         foreach($VariableName in $Variables.Keys)
         {
@@ -308,7 +308,7 @@ Workflow Publish-SMASettingsFileChange
             }
             else
             {
-               Write-Verbose -Message "[$($CredentialName)] Is not a new version. Skipping"
+               Write-Verbose -Message "[$($CredentialName)] is not a new version. Skipping"
             }
             Write-Verbose -Message "[$($CredentialName)] Finished Updating"
 		}

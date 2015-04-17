@@ -283,7 +283,7 @@ Function Set-LocalDevAutomationVariable
                                                 'isEncrypted' = $isEncrypted })
     }
     
-    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
+    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars) -Encoding UTF8
     Read-SmaJSONVariables $SettingsFilePath
 }
 
@@ -347,7 +347,7 @@ Function Remove-LocalDevAutomationVariable
     if($SettingsVars.Variables.ContainsKey($Name))
     {
         $SettingsVars.Variables.Remove($Name)
-        Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
+        Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars) -Encoding UTF8
         Read-SmaJSONVariables $SettingsFilePath
     }
     else
@@ -543,7 +543,7 @@ Function Set-LocalDevAutomationSchedule
         }
     }
     
-    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
+    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars) -Encoding UTF8
 }
 Function Remove-LocalDevAutomationSchedule
 {
@@ -743,7 +743,7 @@ Function Set-LocalDevAutomationConnection
         $SettingsVars.Connections.Add($Name, $NewConnection)
     }
     
-    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
+    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars) -Encoding UTF8
     Read-SmaJSONVariables $SettingsFilePath
 }
 <#
@@ -845,7 +845,7 @@ Function Set-LocalDevAutomationCredential
                                                 'Description' = $Description})
     }
     
-    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars)
+    Set-Content -Path $SettingsFilePath -Value (ConvertTo-JSON $SettingsVars) -Encoding UTF8
     Read-SmaJSONVariables $SettingsFilePath
 }
 Export-ModuleMember -Function * -Verbose:$false
