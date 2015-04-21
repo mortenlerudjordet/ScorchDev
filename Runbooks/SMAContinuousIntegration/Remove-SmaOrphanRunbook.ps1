@@ -1,48 +1,79 @@
 ﻿<#
     .Synopsis
-        Checks a SMA environment and removes any runbooks tagged
-        with the current repository that are no longer found in
-        the repository
-
-    .Parameter RepositoryName
-        The name of the repository
+        Checks a SMA environment and removes any modules that are not found
+        in the local psmodulepath
 #>
-Workflow Remove-SmaOrphanRunbook
+Workflow Remove-SmaOrphanModule
 {
-    Param($RepositoryName)
-
     Write-Verbose -Message "Starting [$WorkflowCommandName]"
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
-
-    $CIVariables = Get-BatchAutomationVariable -Name @('RepositoryInformation',
-                                                       'SMACredName',
+    Try
+    {
+        $CIVariables = Get-BatchAutomationVariable -Name @('SMACredName',
                                                        'WebserviceEndpoint'
                                                        'WebservicePort') `
                                                -Prefix 'SMAContinuousIntegration'
-    $SMACred = Get-AutomationPSCredential -Name $CIVariables.SMACredName
+        $SMACred = Get-AutomationPSCredential -Name $CIVariables.SMACredName
 
-    $RepositoryInformation = (ConvertFrom-JSON -InputObject $CIVariables.RepositoryInformation)."$RepositoryName"
+        $SmaModule = Get-SmaModule -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                   -Port $CIVariables.WebservicePort `
+                                   -Credential $SMACred
 
-    $SmaRunbooks = Get-SMARunbookPaged -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
-                                       -Port $CIVariables.WebservicePort `
-                                       -Credential $SMACred
-    if($SmaRunbooks) { $SmaRunbookTable = Group-SmaRunbooksByRepository -InputObject $SmaRunbooks }
-    $RepositoryWorkflows = Get-GitRepositoryWorkflowName -Path "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)"
-    $Differences = Compare-Object -ReferenceObject $SmaRunbookTable.$RepositoryName.RunbookName `
-                                  -DifferenceObject $RepositoryWorkflows
-    
-    Foreach($Difference in $Differences)
-    {
-        if($Difference.SideIndicator -eq '<=')
+        $LocalModule = Get-Module -ListAvailable -Refresh -Verbose:$false
+
+        if(-not ($SmaModule -and $LocalModule))
         {
-            Write-Verbose -Message "[$($Difference.InputObject)] Does not exist in Source Control"
-            Remove-SmaRunbook -Name $Difference.InputObject `
-                              -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                              -Port $CIVariables.WebservicePort `
-                              -Credential $SMACred
-            Write-Verbose -Message "[$($Difference.InputObject)] Removed from SMA"
+            if(-not $SmaModule)   { Write-Warning -Message 'No modules found in SMA. Not cleaning orphan modules' }
+            if(-not $LocalModule) { Write-Warning -Message 'No modules found in local PSModule Path. Not cleaning orphan modules' }
+        }
+        else
+        {
+            $ModuleDifference = Compare-Object -ReferenceObject  $SmaModule.ModuleName `
+                                               -DifferenceObject $LocalModule.Name
+            Foreach($Difference in $ModuleDifference)
+            {
+                if($Difference.SideIndicator -eq '<=')
+                {
+                    Try
+                    {
+                        Write-Verbose -Message "[$($Difference.InputObject)] Does not exist in Source Control"
+                        <#
+                        TODO: Investigate / Test before uncommenting. Potential to brick an environment
+
+                        Remove-SmaModule -Name $Difference.InputObject `
+                                         -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                         -Port $CIVariables.WebservicePort `
+                                         -Credential $SMACred
+                        #>
+                        Write-Verbose -Message "[$($Difference.InputObject)] Removed from SMA"
+                    }
+                    Catch
+                    {
+                        $Exception = New-Exception -Type 'RemoveSmaModuleFailure' `
+                                                   -Message 'Failed to remove a Sma Module' `
+                                                   -Property @{
+                            'ErrorMessage' = (Convert-ExceptionToString $_) ;
+                            'RunbookName' = $Difference.InputObject ;
+                            'WebserviceEnpoint' = $CIVariables.WebserviceEndpoint ;
+                            'Port' = $CIVariables.WebservicePort ;
+                            'Credential' = $SMACred.UserName ;
+                        }
+                        Write-Warning -Message $Exception -WarningAction Continue
+                    }
+                }
+            }
         }
     }
-
+    Catch
+    {
+        $Exception = New-Exception -Type 'RemoveSmaOrphanModuleWorkflowFailure' `
+                                   -Message 'Unexpected error encountered in the Remove-SmaOrphanModule workflow' `
+                                   -Property @{
+            'ErrorMessage' = (Convert-ExceptionToString $_) ;
+            'RepositoryName' = $RepositoryName ;
+        }
+        Write-Exception -Exception $Exception -Stream Warning
+    }
+    
     Write-Verbose -Message "Finished [$WorkflowCommandName]"
 }

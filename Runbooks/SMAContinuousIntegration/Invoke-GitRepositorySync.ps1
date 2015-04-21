@@ -1,18 +1,22 @@
 ﻿<#
-    .Synopsis
-        Check GIT repository for new commits. If found sync the changes into
-        the current SMA environment
+.Synopsis
+    Check GIT repository for new commits. If found sync the changes into
+    the current SMA environment
 
-    .Parameter RepositoryName
+.Parameter RepositoryName
 #>
 Workflow Invoke-GitRepositorySync
 {
-    Param([Parameter(Mandatory=$true)][String] $RepositoryName)
+    Param(
+        [Parameter(Mandatory = $true)]
+        [String]
+        $RepositoryName
+    )
     
     Write-Verbose -Message "Starting [$WorkflowCommandName]"
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
 
-    $CIVariables = Get-BatchAutomationVariable -Name @('RepositoryInformation',
+    $CIVariables = Get-BatchAutomationVariable -Name @('RepositoryInformation', 
                                                        'SMACredName',
                                                        'WebserviceEndpoint'
                                                        'WebservicePort') `
@@ -20,8 +24,8 @@ Workflow Invoke-GitRepositorySync
     $SMACred = Get-AutomationPSCredential -Name $CIVariables.SMACredName
     Try
     {
-        $RepositoryInformation = (ConvertFrom-Json $CIVariables.RepositoryInformation)."$RepositoryName"
-        Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-JSON $RepositoryInformation)]"
+        $RepositoryInformation = (ConvertFrom-Json -InputObject $CIVariables.RepositoryInformation)."$RepositoryName"
+        Write-Verbose -Message "`$RepositoryInformation [$(ConvertTo-Json -InputObject $RepositoryInformation)]"
 
         $RunbookWorker = Get-SMARunbookWorker
         
@@ -29,11 +33,11 @@ Workflow Invoke-GitRepositorySync
         InlineScript
         {
             $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Continue
-		    & {
-			    $null = $(
-				    $DebugPreference       = [System.Management.Automation.ActionPreference]::SilentlyContinue
-				    $VerbosePreference     = [System.Management.Automation.ActionPreference]::SilentlyContinue
-				    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+            & {
+                $null = $(
+                    $DebugPreference       = [System.Management.Automation.ActionPreference]::SilentlyContinue
+                    $VerbosePreference     = [System.Management.Automation.ActionPreference]::SilentlyContinue
+                    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
                     
                     $RepositoryInformation = $Using:RepositoryInformation
                     Update-GitRepository -RepositoryInformation $RepositoryInformation
@@ -42,60 +46,64 @@ Workflow Invoke-GitRepositorySync
         } -PSComputerName $RunbookWorker -PSCredential $SMACred
 
         $RepositoryChangeJSON = Find-GitRepositoryChange -RepositoryInformation $RepositoryInformation
-        $RepositoryChange = ConvertFrom-JSON $RepositoryChangeJSON
+        $RepositoryChange = ConvertFrom-Json -InputObject $RepositoryChangeJSON
         if("$($RepositoryChange.CurrentCommit)" -ne "$($RepositoryInformation.CurrentCommit)")
         {
             Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryChange.CurrentCommit)]"
             Write-Verbose -Message "RepositoryChange [$RepositoryChangeJSON]"
             $ReturnInformationJSON = Group-RepositoryFile -Files $RepositoryChange.Files `
                                                           -RepositoryInformation $RepositoryInformation
-            $ReturnInformation = ConvertFrom-JSON -InputObject $ReturnInformationJSON
+            $ReturnInformation = ConvertFrom-Json -InputObject $ReturnInformationJSON
             Write-Verbose -Message "ReturnInformation [$ReturnInformationJSON]"
-
-            Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
-            {
-                Write-Verbose -Message "[$($RunbookFilePath)] Starting Processing"
-                $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$($RepoChange.CurrentCommit)"
-				$RunbookFile = $File.FullPath
-				$AllRunbooksFiles = $RepositoryChange.AllRunbookFiles
-				# NOTE: SMACred must have access to read files in local git folder
-				# NOTE: To make processing faster add logic to save reference list for Runbooks to SMA variable
-				InlineScript {
-					#Import-Module -Name 'SMARunbooksImportSDK'
-					Import-VCSRunbooks -wfToUpdateList $Using:RunbookFile `
-									   -wfAllList $Using:AllRunbooksFiles -Tag $Using:TagLine `
-									   -WebServiceEndpoint $Using:WebServiceEndpoint -Port $Using:Port
-									   
-				} -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
-				If($inlError) {
-					Write-Exception -Stream Error -Exception $inlError
-					# Using ErrorAction stop will suspend Runbook on first call to write-error, this error will not be written to history log in SMA
-					Write-Error -Message "There where errors importing Runbooks: $inlError" 
-					$inlError = $Null
-				}
-                Write-Verbose -Message "[$($RunbookFilePath)] Finished Processing"
-
-				Checkpoint-Workflow
-
-            }
+            
             Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
                 Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
-                                              -CurrentCommit $RepositoryChange.CurrentCommit `
-                                              -RepositoryName $RepositoryName
+                                         -CurrentCommit $RepositoryChange.CurrentCommit `
+                                         -RepositoryName $RepositoryName
                 Checkpoint-Workflow
             }
-            foreach($Module in $ReturnInformation.ModuleFiles)
+            
+            Foreach($ModulePath in $ReturnInformation.ModuleFiles)
             {
-                $ModuleName = (Test-ModuleManifest -Path $Module).Name
-                $PowerShellModuleInformation = Import-SmaPowerShellModule -ModuleName $ModuleName `
-                                                                          -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
-                                                                          -WebservicePort $CIVariables.WebservicePort `
-                                                                          -Credential $SMACred
-                SetAutomationModuleActivityMetadata -ModuleName $PowerShellModuleInformation.ModuleName `
-                                                    -ModuleVersion $PowerShellModuleInformation.Version
+                Try
+                {
+                    $PowerShellModuleInformation = Test-ModuleManifest -Path $ModulePath
+                    $ModuleName = $PowerShellModuleInformation.Name -as [string]
+                    $ModuleVersion = $PowerShellModuleInformation.Version -as [string]
+                    $PowerShellModuleInformation = Import-SmaPowerShellModule -ModulePath $ModulePath `
+                                                                              -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
+                                                                              -WebservicePort $CIVariables.WebservicePort `
+                                                                              -Credential $SMACred
+                }
+                Catch
+                {
+                    $Exception = New-Exception -Type 'ImportSmaPowerShellModuleFailure' `
+                                               -Message 'Failed to import a PowerShell module into Sma' `
+                                               -Property @{
+                        'ErrorMessage' = (Convert-ExceptionToString $_) ;
+                        'ModulePath' = $ModulePath ;
+                        'ModuleName' = $ModuleName ;
+                        'ModuleVersion' = $ModuleVersion ;
+                        'PowerShellModuleInformation' = "$(ConvertTo-JSON $PowerShellModuleInformation)" ;
+                        'WebserviceEnpoint' = $CIVariables.WebserviceEndpoint ;
+                        'Port' = $CIVariables.WebservicePort ;
+                        'Credential' = $SMACred.UserName ;
+                    }
+                    Write-Warning -Message $Exception -WarningAction Continue
+                }
+                
                 Checkpoint-Workflow
             }
+
+            Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
+            {
+                Publish-SMARunbookChange -FilePath $RunbookFilePath `
+                                         -CurrentCommit $RepositoryChange.CurrentCommit `
+                                         -RepositoryName $RepositoryName
+                Checkpoint-Workflow
+            }
+            
             if($ReturnInformation.CleanRunbooks)
             {
                 Remove-SmaOrphanRunbook -RepositoryName $RepositoryName
@@ -113,22 +121,39 @@ Workflow Invoke-GitRepositorySync
             }
             if($ReturnInformation.ModuleFiles)
             {
-                $RepositoryModulePath = "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)"
-                inlinescript
+                Try
                 {
-                    Add-PSEnvironmentPathLocation -Path $Using:RepositoryModulePath
-                } -PSComputerName $RunbookWorker -PSCredential $SMACred
+                    Write-Verbose -Message 'Validating Module Path on Runbook Wokers'
+                    $RepositoryModulePath = "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)"
+                    inlinescript
+                    {
+                        Add-PSEnvironmentPathLocation -Path $Using:RepositoryModulePath
+                    } -PSComputerName $RunbookWorker -PSCredential $SMACred
+                    Write-Verbose -Message 'Finished Validating Module Path on Runbook Wokers'
+                }
+                Catch
+                {
+                    $Exception = New-Exception -Type 'PowerShellModulePathValidationError' `
+                                               -Message 'Failed to set PSModulePath' `
+                                               -Property @{
+                        'ErrorMessage' = (Convert-ExceptionToString $_) ;
+                        'RepositoryModulePath' = $RepositoryModulePath ;
+                        'RunbookWorker' = $RunbookWorker ;
+                    }
+                    Write-Warning -Message $Exception -WarningAction Continue
+                }
+                
                 Checkpoint-Workflow
             }
             $UpdatedRepositoryInformation = (Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
-                                                                                      -RepositoryName $RepositoryName `
-                                                                                      -Commit $RepositoryChange.CurrentCommit) -as [string]
+                                                                                       -RepositoryName $RepositoryName `
+                                                                                       -Commit $RepositoryChange.CurrentCommit) -as [string]
             $VariableUpdate = Set-SmaVariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
                                               -Value $UpdatedRepositoryInformation `
                                               -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
                                               -Port $CIVariables.WebservicePort `
                                               -Credential $SMACred
-            
+
             Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentCommit)..$($RepositoryChange.CurrentCommit)]"
         }
     }

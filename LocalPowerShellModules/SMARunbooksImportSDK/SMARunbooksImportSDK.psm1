@@ -5,8 +5,14 @@ Function Import-VCSRunbooks
             Update multiple runbooks and all dependencies in SMA when changed in source control
 			Use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running function for the first time
 			
-		.Parameter wfToUpdateList
-			Path of Runbooks to update or import
+		.Parameter WFsToUpdate
+			Hashtable array of all runbooks to update, object must contain 
+            'FullPath' containing full path to runbook file
+            'FileName' name of runbook file (wf.ps1)
+            'FileExtension' extension of runbook file (ps1)
+            'CurrentCommit'	ChangesetID of runbook file from source control
+        .Parameter WFsToUpdateJSON
+            Same as WFsToUpdate but converted to JSON
 		.Parameter wfAllList
 			Full name path of all workflow ps1 files in source control or in a file folder
 		.Parameter Tag
@@ -17,49 +23,42 @@ Function Import-VCSRunbooks
 			Port of SMA 
 			
 		.Examples
-			Import-VCSRunbooks -wfToUpdateList @("c:\source\folder\workflow1.ps1","c:\source\folder\workflow2.ps1") -wfAllList @("c:\source\folder\workflow1.ps1","c:\source\folder\workflow2.ps1", "c:\source\folder\workflow3.ps1","c:\source\folder\workflow4.ps1")
-			-Tag "Changeset: 1111" -WebServiceEndpoint "https://localhost"  -Port "9090"
+			$ToUpdate = @{ 	
+                'FullPath' 		= 	"c:\source\folder\workflow1.ps1";
+                'FileName' 		=	"workflow1.ps1";
+                'FileExtension' = 	"ps1";
+                'CurrentCommit'	= 	123123
+            }
+            $ToUpdate2 = @{ 	
+                'FullPath' 		= 	"c:\source\folder\workflow2.ps1";
+                'FileName' 		=	"workflow2.ps1";
+                'FileExtension' = 	"ps1";
+                'CurrentCommit'	= 	123124
+            }
+            
+            Import-VCSRunbooks -WFsToUpdate @($ToUpdate,$ToUpdate2) -wfAllList @("c:\source\folder\workflow1.ps1","c:\source\folder\workflow2.ps1", "c:\source\folder\workflow3.ps1","c:\source\folder\workflow4.ps1")
+			-WebServiceEndpoint "https://localhost"  -Port "9090"
 #>
     [CmdletBinding()]
     Param (
-        [Parameter(Mandatory=$true,HelpMessage='String array of ps1 files updated in local source control mapping')]
+        [Parameter(ParameterSetName='WFsJSON',Mandatory=$true,HelpMessage='JSON string of runbooks updated in local source control mapping')]
         [ValidateNotNullOrEmpty()]
-        [string[]]$wfToUpdateList,
+        [string]$WFsToUpdateJSON,
+        [Parameter(ParameterSetName='WFs',Mandatory=$true,HelpMessage='Hashtable array of runbooks updated in local source control mapping')]
+        [ValidateNotNullOrEmpty()]
+        [hashtable[]]$WFsToUpdate,
         [Parameter(Mandatory=$true,HelpMessage='String array of all ps1 files in local source control mapping')]
         [ValidateNotNullOrEmpty()]
         [string[]]$wfAllList,
-        [Parameter(Mandatory=$false,HelpMessage='Set Tag for Runbooks to be updated with')]
-        [string]$Tag,
         [Parameter()]
 		[string]$WebServiceEndpoint = "https://localhost",
         [Parameter()]
 		[string]$Port = "9090"
     )
-	# List of ps1 files that has been updated in source control, stop if error detected
-	# if ErrorAction Stop is used
-    $wfs = Get-Childitem -Path $wfToUpdateList -ErrorAction Continue -ErrorVariable oErr
-    If($oErr) {
-        # Dont run more code if error is detected, if ErrorAction Stop is used directly on function call SMA vil not record the error in the history tab
-        # Write Error to powershell eventlog, use New-EventLog -LogName 'Windows PowerShell' -Source 'Workflows'  to register source before running
-		#Write-EventLog -EventId 1 -LogName 'Windows PowerShell' -Source 'Workflows' -EntryType Error -Message "Function Import-VCSRunbooks: Error detected reading file from disk: $($oErr), Suspending execution"
-        # If errorAction Stop is used in calling workflow execution will suspend executing next line
-        Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
-        $oErr = $Null
-		#Return
-    } 
-
-	
-	Write-Debug -Message "Import-VCSRunbooks Files to process: $($wfs.BaseName)"
-	Write-Debug -Message "Import-VCSRunbooks FullName of files to process: $($wfs.FullName)"
-	# List of all ps1 files in source control
-	Write-Debug -Message "Import-VCSRunbooks all Runbook files input: $($wfAllList)"
-    
-    If($wfs.GetType().isArray) {
-        [System.Collections.ArrayList]$ToProcessList = ($wfs | Select-Object -Property FullName,BaseName)
+    If($WFsToUpdateJSON) {
+        $WFsToUpdate = ConvertFrom-Json -InputObject $WFsToUpdateJSON
     }
-    Else {
-        [System.Object]$ToProcessList = ($wfs | Select-Object -Property FullName,BaseName)
-    }
+   
     $Global:wfReferenceList = New-Object  -TypeName System.Collections.ArrayList
 	$Global:DoneProcessList = New-Object  -TypeName System.Collections.ArrayList
 	$Global:wfDependancyList = New-Object -TypeName System.Collections.ArrayList
@@ -69,27 +68,30 @@ Function Import-VCSRunbooks
 	Write-Debug -Message "Import-VCSRunbooks: Starting building reference list"
     foreach ($wf in $wfAllList)
     {
-        $wfName = (($wf.Split('\')).Split('.')[-2])
+        # Only get the name of the file and not the extension
+        $wfName = ($wf.Split('\')).Split('.')[-2])
         Write-Verbose -Message "Retrieving references for: $($wfName)"
         Write-Debug -Message "Import-VCSRunbooks: Calling Get-RunbookReferences with: $($wf) as input" 
         Get-RunbookReferences -Path $wf -BasePath $wfAllList -ErrorAction Continue -ErrorVariable oErr
         If($oErr) {
 		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
             # Using Continue and ErrorVariable the Error is written in history tab
-		    Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		    Write-Error -Message "Error in Import-VCSRunbooks: $oErr" -ErrorAction Continue
 		    $oErr = $Null
-		    #Return
+		    # Abort if one of the runbooks cant be read
+            Return
 	    }
         $wfName = $Null
     }
 	# Build dependencies tree for updated workflows
 	Write-Debug -Message "Import-VCSRunbooks: Starting building dependency list"
-    foreach ($wf in $ToProcessList)
+    foreach ($wf in $WFsToUpdate)
     {
 			
 		$RunbookDep = New-Object -TypeName PSObject -Property (@{
         'RunbookName' = "";
 		'FullName' = "";
+        'Tag' = "";
         'RunbookDependencies' = @()
 		})
 		$Global:wfDependancyList = $Null
@@ -97,19 +99,20 @@ Function Import-VCSRunbooks
 		$Global:wfDependancyList = New-Object -TypeName System.Collections.ArrayList
 		Write-Debug -Message "Import-VCSRunbooks: Runbook FullName: $($wf.FullName)"
 		$RunbookDep.FullName = $wf.FullName
-		Write-Debug -Message "Import-VCSRunbooks: Runbook BaseName: $($wf.BaseName)"
-		$RunbookDep.RunbookName = $wf.BaseName
+        # Only get the name of the file and not the extension
+		Write-Debug -Message "Import-VCSRunbooks: Runbook Name: $(($wf.FileName).Split('.')[-2])"
+		$RunbookDep.RunbookName = ($wf.FileName).Split('.')[-2]
+        Write-Debug -Message "Import-VCSRunbooks: ChangesetID of file: $($wf.CurrentCommit)"
+		$RunbookDep.Tag = "ChangesetID:$($wf.CurrentCommit)"
 		# Build dependency tree for updated workflow
-		Write-Verbose -Message "Retrieving all dependencies for: $($wf.BaseName)"
-		Write-Debug -Message "Import-VCSRunbooks: calling Get-RunbookDependencies with $($wf.Fullname)"
+		Write-Verbose -Message "Retrieving all dependencies for: $($RunbookDep.RunbookName)"
+		Write-Debug -Message "Import-VCSRunbooks: calling Get-RunbookDependencies with $($RunbookDep.FullName)"
 		Get-RunbookDependencies -Path $wf.FullName -ErrorAction Continue -ErrorVariable oErr
         If($oErr) {
-		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-            # Using Continue and ErrorVariable the Error is written in history tab
-		    Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		    Write-Error -Message "Error in Import-VCSRunbooks: $oErr" -ErrorAction Continue
 		    $oErr = $Null
-		    #Return
-	    } 
+		    Return
+	    }
 		Write-Debug -Message "Import-VCSRunbooks: Adding retrieved dependencies to Global:wfDependancyList"
 		$RunbookDep.RunbookDependencies = $Global:wfDependancyList
 		Write-Debug -Message "Import-VCSRunbooks: Adding retrieved dependencies to $Global:wfDependancyList"
@@ -127,18 +130,17 @@ Function Import-VCSRunbooks
         # Publish original updated workflow if not already published
 		If($DoneProcessList -notcontains $wf.FullName) {
             Write-Debug -Message "Import-VCSRunbooks: Publishing Runbook: $($wf.RunbookName)"
-		    Publish-Runbook -Path $wf.FullName -WebServiceEndpoint $WebServiceEndpoint -Tag $Tag -Port $Port -ErrorAction Continue -ErrorVariable oErr
+		    Publish-Runbook -Path $wf.FullName -WebServiceEndpoint $WebServiceEndpoint -Tag $wf.Tag -Port $Port -ErrorAction Continue -ErrorVariable oErr
             If($oErr) {
-		        # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-                # Using Continue and ErrorVariable the Error is written in history tab
-		        Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		        Write-Error -Message "Error in Import-VCSRunbooks: $oErr" -ErrorAction Continue
 		        $oErr = $Null
-		        #Return
+		        Return
 	        }
             $DoneProcessList += $wf.RunbookName
         }
         Else {
-                Write-Verbose -Message "SKIPPING: $($wf.FullName) because it has been published already"
+                Write-Verbose -Message "SKIPPING: $($wf.RunbookName) because it has been published already"
+                Write-Debug -Message "SKIPPING: $($wf.FullName) because it has been published already"
         }
         # Updating dependencies of Runbook
         ForEach($wfDep in $wf.RunbookDependencies) {
@@ -154,11 +156,9 @@ Function Import-VCSRunbooks
                 # Dont change tag for dependency runbooks
 			    Publish-Runbook -Path $wfDep -WebServiceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
                 If($oErr) {
-		            # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-                    # Using Continue and ErrorVariable the Error is written in history tab
-		            Write-Error -Message "Error in Import-VCSRunbooks: $oErr"
+		            Write-Error -Message "Error in Import-VCSRunbooks: $oErr" -ErrorAction Continue
 		            $oErr = $Null
-		            #Return
+		            Return
 	            }
                 $DepName = $Null
             }
@@ -215,9 +215,9 @@ Function Get-RunbookDependencies
                     If($oErr) {
 					    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
                         # Using Continue and ErrorVariable the Error is written in history tab
-					    Write-Error -Message "Error in Get-RunbookDependencies: $oErr"
+					    Write-Error -Message "Error in Get-RunbookDependencies: $oErr" -ErrorAction Continue
 					    $oErr = $Null
-					    #Return
+					    Return
 				    } 
                     
 				}
@@ -256,9 +256,9 @@ Function Get-RunbookReferences
     If($oErr) {
 		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
         # Using Continue and ErrorVariable the Error is written in history tab
-		Write-Error -Message "Error in Get-RunbookReferences: $oErr"
+		Write-Error -Message "Error in Get-RunbookReferences: $oErr" -ErrorAction Continue
 		$oErr = $Null
-		#Return
+		Return
 	}
     
     $ThisWfSB = [scriptblock]::Create($ThisWf)
@@ -276,11 +276,9 @@ Function Get-RunbookReferences
     # Retrieve name of all workflows in source control
 	$AllWFs = Get-ChildItem -Path $BasePath -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-        # Using Continue and ErrorVariable the Error is written in history tab
-		Write-Error -Message "Error in Get-RunbookReferences: $oErr"
+		Write-Error -Message "Error in Get-RunbookReferences: $oErr" -ErrorAction Continue
 		$oErr = $Null
-		#Return
+		Return
 	}  
     
 	Write-Debug -Message "Get-RunbookReferences: Files in basepath: $($AllWFs)"
@@ -356,11 +354,9 @@ Function Publish-Runbook
         Write-Debug -Message "Importing Runbook: $($wfName)"
         $SmaRb = Import-SmaRunbook -Path $Path -WebServiceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
         If($oErr) {
-		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-            # Using Continue and ErrorVariable the Error is written in history tab
-		    Write-Error -Message "Error in Publish-Runbook: $oErr"
+		    Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue
 		    $oErr = $Null
-		    #Return
+		    Return
 	    }  
 
         Write-Debug -Message "Writing tag for runbook ID: $($SmaRb.RunbookID )"
@@ -368,11 +364,9 @@ Function Publish-Runbook
 			Write-Debug -Message "Setting tag"
 			Set-SmaRunbookTags -RunbookID $SmaRb.RunbookID -Tags $Tag -WebserviceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
             If($oErr) {
-		        # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-                # Using Continue and ErrorVariable the Error is written in history tab
-		        Write-Error -Message "Error in Publish-Runbook: $oErr"
+		        Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue
 		        $oErr = $Null
-		        #Return
+		        Return
 	        }  
         }
         Else {
@@ -384,11 +378,9 @@ Function Publish-Runbook
         Write-Debug -Message "Editing Runbook: $($wfName)"
         Edit-SmaRunbook -Path $Path -WebServiceEndpoint $WebServiceEndpoint -Port $Port -Name $wfName -Overwrite -ErrorAction Continue -ErrorVariable oErr
         If($oErr) {
-		    # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-            # Using Continue and ErrorVariable the Error is written in history tab
-		    Write-Error -Message "Error in Publish-Runbook: $oErr"
+		    Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue
 		    $oErr = $Null
-		    #Return
+		    Return
 	    }  
 
         Write-Debug -Message "Writing tag for runbook ID: $($SmaRb.RunbookID)"
@@ -404,11 +396,9 @@ Function Publish-Runbook
 			}
 			Set-SmaRunbookTags -RunbookID $SmaRb.RunbookID -Tags $Tag -WebserviceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
             If($oErr) {
-		        # If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-                # Using Continue and ErrorVariable the Error is written in history tab
-		        Write-Error -Message "Error in Publish-Runbook: $oErr"
+		        Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue
 		        $oErr = $Null
-		        #Return
+		        Return
 	        }  
 
         }
@@ -419,11 +409,9 @@ Function Publish-Runbook
     Write-Debug -Message "Publishing Runbook ID: $($SmaRb.RunbookID)"
     $publishedId = Publish-SmaRunbook -Id $SmaRb.RunbookID -WebServiceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-        # Using Continue and ErrorVariable the Error is written in history tab
-		Write-Error -Message "Error in Publish-Runbook: $oErr"
+		Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue
 		$oErr = $Null
-		#Return
+		Return
 	}  
 }
 Function Set-SmaRunbookTags
@@ -455,11 +443,9 @@ Param
 	Write-Debug -Message  "Runbook URI: $($RunbookURI)"
 	$runbook = Get-SmaRunbook -Id $RunbookID -WebServiceEndpoint $WebserviceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
     If($oErr) {
-		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
-        # Using Continue and ErrorVariable the Error is written in history tab
-		Write-Error -Message "Error in Publish-Runbook: $oErr"
+		Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue
 		$oErr = $Null
-		#Return
+		Return
 	}  
  
 	[xml]$baseXML = @'
@@ -486,9 +472,9 @@ Param
     If($oErr) {
 		# If errorAction Stop is used in calling workflow inside of SMA execution will suspend directly without writing error in history tab
         # Using Continue and ErrorVariable the Error is written in history tab
-		Write-Error -Message "Error in Publish-Runbook: $oErr"
+		Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue
 		$oErr = $Null
-		#Return
+		Return
 	}  
 
 	Write-Debug -Message "Finished Set-SmaRunbookTags for $RunbookID"

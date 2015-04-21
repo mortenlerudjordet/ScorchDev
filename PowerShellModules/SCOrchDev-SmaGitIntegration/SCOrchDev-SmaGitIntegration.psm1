@@ -9,17 +9,18 @@ Function Get-SmaWorkflowNameFromFile
 {
     Param([Parameter(Mandatory=$true)][string] $FilePath)
 
-    $FileContent = Get-Content $FilePath
-    if("$FileContent" -match '(?im)workflow\s+([^\s]+)')
+    $DeclaredCommands = Find-DeclaredCommand -Path $FilePath
+    Foreach($Command in $DeclaredCommands.Keys)
     {
-        return $Matches[1]
+        if($DeclaredCommands.$Command.Type -eq 'Workflow') 
+        { 
+            return $Command -as [string]
+        }
     }
-    else
-    {
-        Throw-Exception -Type 'WorkflowNameNotFound' `
+    $FileContent = Get-Content $FilePath
+    Throw-Exception -Type 'WorkflowNameNotFound' `
                         -Message 'Could not find the workflow tag and corresponding workflow name' `
                         -Property @{ 'FileContent' = "$FileContent" }
-    }
 }
 <#
     .Synopsis
@@ -95,9 +96,9 @@ Function Get-SmaGlobalFromFile
     $ReturnInformation = @{}
     try
     {
-        $SettingsJSON = (Get-Content -Path $FilePath) -as [string]
+        $SettingsJSON = (Get-Content $FilePath) -as [string]
         $SettingsObject = ConvertFrom-Json -InputObject $SettingsJSON
-        $SettingsHashTable = ConvertFrom-PSCustomObject -InputObject $SettingsObject
+        $SettingsHashTable = ConvertFrom-PSCustomObject $SettingsObject
         
         if(-not ($SettingsHashTable.ContainsKey($GlobalType)))
         {
@@ -137,10 +138,13 @@ Function Get-SmaGlobalFromFile
     .Synopsis
         Updates a Global RepositoryInformation string with the new commit version
         for the target repository
+
     .Parameter RepositoryInformation
         The JSON representation of a repository
+
     .Parameter RepositoryName
         The name of the repository to update
+
     .Paramter Commit
         The new commit to store
 #>
@@ -177,7 +181,7 @@ Function Get-GitRepositoryVariableName
     $RunbookNames = @()
     $RunbookFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
-                                  -Recurse:$True `
+                                  -Recurse `
                                   -File:$True `
 								  -Exclude '*-automation.json'
     foreach($RunbookFile in $RunbookFiles)
@@ -192,7 +196,8 @@ Function Get-GitRepositoryAssetName
 
     $Assets = @{ 'Variable' = @() ;
                  'Schedule' = @() ;
-				 'Connection' = @()	
+				 'Connection' = @();
+                 'Credential' = @()
 				}
     $AssetFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
@@ -205,6 +210,7 @@ Function Get-GitRepositoryAssetName
         $VariableJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Variables
         $ScheduleJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Schedules
 		$ConnectionJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Connections
+        $CredentialJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Credentials
         if($VariableJSON)
         {
             Foreach($VariableName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $VariableJSON)).Keys)
@@ -219,11 +225,18 @@ Function Get-GitRepositoryAssetName
                 $Assets.Schedule += $ScheduleName
             }
         }
-		if($ConnectionJSON)
+		if($CredentialJSON)
         {
-            Foreach($ConnectionName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $ConnectionJSON)).Keys)
+            Foreach($CredentialName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $CredentialJSON)).Keys)
             {
-                $Assets.Connection += $ConnectionName
+                $Assets.Credential += $CredentialName
+            }
+        }
+        if($ConnectionJSON)
+        {
+            Foreach($CredentialName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $CredentialJSON)).Keys)
+            {
+                $Assets.Credential += $CredentialName
             }
         }
     }
@@ -233,7 +246,6 @@ Function Get-GitRepositoryAssetName
     .Synopsis 
         Groups all files that will be processed.
         # TODO put logic for import order here
-        # TODO Remove duplicates
     .Parameter Files
         The files to sort
     .Parameter RepositoryInformation
@@ -409,7 +421,9 @@ Function Group-SmaRunbooksByRepository
 #>
 Function Group-SmaAssetsByRepository
 {
-    Param([Parameter(Mandatory=$True)] $InputObject)
+    Param(
+    [Parameter(Mandatory=$True)] $InputObject
+    )
     ConvertTo-Hashtable -InputObject $InputObject `
                         -KeyName 'Description' `
                         -KeyFilterScript { 
@@ -430,24 +444,11 @@ Function Group-SmaAssetsByRepository
 #>
 Function Find-GitRepositoryChange
 {
-	[CmdletBinding()]
-	Param (
-        [Parameter(ParameterSetName='RepositoryInformation',Mandatory=$true,HelpMessage='Please specify RepositoryInformation as an object')][Alias('Information','ri')]
-        [ValidateNotNullOrEmpty()]
-        [Object]$RepositoryInformation,
-        [Parameter(ParameterSetName='RepositoryInformationJSON',Mandatory=$true,HelpMessage='Please specify RepositoryInformation as an JSON string')][Alias('InformationJSON','rij')]
-        [ValidateNotNullOrEmpty()]
-        [String]$RepositoryInformationJSON
-	)
-	# IF JSON is used convert to object
-	If($RepositoryInformationJSON) {
-		$RepositoryInformation = ConvertFrom-Json -InputObject $RepositoryInformationJSON
-	} 
-	
+    Param([Parameter(Mandatory=$true) ] $RepositoryInformation)
+    
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
     # Set current directory to the git repo location
-
     Set-Location $RepositoryInformation.Path
       
     $ReturnObj = @{ 'CurrentCommit' = $RepositoryInformation.CurrentCommit;
@@ -456,7 +457,6 @@ Function Find-GitRepositoryChange
     $NewCommit = (git rev-parse --short HEAD)
     $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $RepositoryInformation.CurrentCommit, (git rev-list --max-parents=0 HEAD) -FilterScript { $_ -ne -1 }) $NewCommit
     $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() }
-
     Foreach($File in $ModifiedFiles)
     {
         if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
@@ -467,11 +467,6 @@ Function Find-GitRepositoryChange
                                    'ChangeType' = $Matches[1] }
         }
     }
-	
-	# Assumption : Only workflows in the Runbooks folder matter for hindering nesting breakage in SMA
-    $ReturnObj.AllRunbookFiles = Get-ChildItem -Path $RepositoryInformation.Path -Filter "*.ps1" -Recurse:$True -File:$True | 
-    Where-Object -FilterScript {$_.Directory -match $RepositoryInformation.RunBookFolder} | 
-    Select-Object -ExpandProperty FullName
     
     return (ConvertTo-Json $ReturnObj -Compress)
 }
@@ -489,51 +484,55 @@ Function Update-GitRepository
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
     
     # Set current directory to the git repo location
+    if(-Not (Test-Path -Path $RepositoryInformation.Path))
+    {
+        $ParentDirectory = New-FileItemContainer -FileItemPath $RepositoryInformation.Path
+        Try
+        {
+            git.exe clone "$($RepositoryInformation.RepositoryPath)" "$($RepositoryInformation.Path)" --recursive
+        }
+        Catch
+        {
+            Write-Exception -Exception $_ -Stream Warning 
+        }
+        
+    }
     Set-Location $RepositoryInformation.Path
       
-    if(-not ("$(git branch)" -match '\*\s(\w+)'))
+    if(-not ("$(git.exe branch)" -match '\*\s(\w+)'))
     {
-        Throw-Exception -Type 'GitTargetBranchNotFound' `
-                        -Message 'git could not find any current branch' `
-                        -Property @{ 'result' = $(git branch) ;
-                                     'match'  = "$(git branch)" -match '\*\s(\w+)'}
+        if(Test-IsNullOrEmpty -String "$(git.exe branch)")
+        {
+            Write-Verbose -Message 'git branch did not return output. Assuming we are on the correct branch'
+        }
+        else
+        {
+            Throw-Exception -Type 'GitTargetBranchNotFound' `
+                            -Message 'git could not find any current branch' `
+                            -Property @{ 'result' = $(git.exe branch) ;
+                                         'match'  = "$(git.exe branch)" -match '\*\s(\w+)'}
+        }
     }
-    if($Matches[1] -ne $RepositoryInformation.Branch)
+    elseif($Matches[1] -ne $RepositoryInformation.Branch)
     {
         Write-Verbose -Message "Setting current branch to [$($RepositoryInformation.Branch)]"
         try
         {
-            git checkout $RepositoryInformation.Branch | Out-Null
+            git.exe checkout $RepositoryInformation.Branch | Out-Null
         }
         catch
         {
-            if($LASTEXITCODE -ne 0)
-            {
-                Write-Exception -Stream Error -Exception $_
-            }
-            else
-            {
-                Write-Exception -Stream Verbose -Exception $_
-            }
+            Write-Exception -Exception $_ -Stream Warning
         }
     }
-
     
     try
     {
-        $initialization = git pull
+        $initialization = git.exe pull
     }
     catch
     {
-        if($LASTEXITCODE -ne -1)
-        {
-            Write-Verbose -Message "`$LASTEXITCODE [$LASTEXITCODE]"
-            Write-Exception -Stream Error -Exception $_
-        }
-        else
-        {
-            Write-Verbose -Message "Updated Repository"
-        }
+        Write-Exception -Exception $_ -Stream Warning
     }
 }
 Export-ModuleMember -Function * -Verbose:$false -Debug:$False

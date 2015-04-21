@@ -1,6 +1,6 @@
 ﻿<#
     .Synopsis
-        Monitors a local git repository for new commits from a centralized repository.
+        Monitors a local TFS repository for new commits from a centralized repository.
         When a new commit is found a list of modified files is passed to Sync-CommitChanges
         to update the SMA environment with those changes
 #>
@@ -19,16 +19,24 @@ workflow Monitor-SourceControlChange
 
     $MonitorRefreshTime = ( Get-Date ).AddMinutes( $CIVariables.MonitorLifeSpan )
     $MonitorActive      = ( Get-Date ) -lt $MonitorRefreshTime
-    
+    $LastCommit         = $CIVariables.TFSCurrentCommit
     while($MonitorActive)
     {
 		try
 		{
             $RepositoryInformation = ConvertFrom-JSON $CIVariables.RepositoryInformation
-            foreach($ProjectName in ($RepositoryInformation | Get-Member -MemberType NoteProperty).Name )
+            foreach($RepositoryName in (ConvertFrom-PSCustomObject -InputObject $RepositoryInformation `
+                                                                   -KeyFilterScript {
+                                                                        Param($KeyName)
+                                                                        if($KeyName -notin ('PSComputerName',
+                                                                                            'PSShowComputerName',
+                                                                                            'PSSourceJobInstanceId'))
+                                                                        {
+                                                                            $KeyName
+                                                                        }}).Keys )
             {
                 Write-Verbose -Message "[$RepositoryName] Starting Processing"
-                Invoke-TFSRepositorySync -ProjectName $RepositoryName
+                Invoke-TFSRepositorySync -RepositoryName $RepositoryName
                 Write-Verbose -Message "[$RepositoryName] Finished Processing"
             }
         }
@@ -66,6 +74,6 @@ workflow Monitor-SourceControlChange
     }
 	#  Relaunch this monitor
 	Write-Verbose -Message "Reached end of monitor lifespan. Relaunching this monitor [$WorkflowCommandName]."
-	#$Launch = Start-SmaRunbook -Name $WorkflowCommandName `
-#							   -WebServiceEndpoint $WebServiceEndpoint
+	$Launch = Start-SmaRunbook -Name $WorkflowCommandName `
+     						   -WebServiceEndpoint $WebServiceEndpoint
 }

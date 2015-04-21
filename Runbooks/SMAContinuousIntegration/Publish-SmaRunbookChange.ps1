@@ -14,9 +14,19 @@
 #>
 Workflow Publish-SMARunbookChange
 {
-    Param( [Parameter(Mandatory=$True)][String] $FilePath,
-           [Parameter(Mandatory=$True)][String] $CurrentCommit,
-           [Parameter(Mandatory=$True)][String] $RepositoryName )
+    Param(
+        [Parameter(Mandatory=$True)]
+        [String]
+        $FilePath,
+
+        [Parameter(Mandatory=$True)]
+        [String]
+        $CurrentCommit,
+
+        [Parameter(Mandatory=$True)]
+        [String]
+        $RepositoryName
+    )
     
     Write-Verbose -Message "[$FilePath] Starting [$WorkflowCommandName]"
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
@@ -42,15 +52,11 @@ Workflow Publish-SMARunbookChange
         {
             Write-Verbose -Message "[$WorkflowName] Initial Import"
             
-            $ImportedRunbook = Import-SmaRunbook -Path $FilePath `
-                                                 -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                                 -Port $CIVariables.WebservicePort `
-                                                 -Credential $SMACred
+            $Runbook = Import-SmaRunbook -Path $FilePath `
+                                         -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                         -Port $CIVariables.WebservicePort `
+                                         -Credential $SMACred
             
-            $Runbook = Get-SmaRunbook -Name $WorkflowName `
-                                      -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                      -Port $CIVariables.WebservicePort `
-                                      -Credential $SMACred
             $TagLine = "RepositoryName:$RepositoryName;CurrentCommit:$CurrentCommit;"
             $NewVersion = $True
         }
@@ -66,11 +72,11 @@ Workflow Publish-SMARunbookChange
             if($NewVersion)
             {
                 $EditStatus = Edit-SmaRunbook -Overwrite `
-                                          -Path $FilePath `
-                                          -Name $WorkflowName `
-                                          -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
-                                          -Port $CIVariables.WebservicePort `
-                                          -Credential $SMACred                
+                                              -Path $FilePath `
+                                              -Name $WorkflowName `
+                                              -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
+                                              -Port $CIVariables.WebservicePort `
+                                              -Credential $SMACred                
             }
             else
             {

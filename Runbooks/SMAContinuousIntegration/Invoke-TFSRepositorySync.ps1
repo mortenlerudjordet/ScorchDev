@@ -9,7 +9,11 @@
 #>
 Workflow Invoke-TFSRepositorySync
 {
-    Param([Parameter(Mandatory=$true)][String] $RepositoryName)
+    Param(
+        [Parameter(Mandatory=$true)]
+        [String] 
+        $RepositoryName
+    )
     
     Write-Verbose -Message "Starting [$WorkflowCommandName]"
     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
@@ -31,66 +35,95 @@ Workflow Invoke-TFSRepositorySync
 		# Update the repository on all SMA Workers
         InlineScript
         {
-            $RepositoryInformation = $Using:RepositoryInformation
-            Find-TFSChange -RepositoryInformation $RepositoryInformation
+            $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Continue
+            & {
+                $null = $(
+                    $DebugPreference       = [System.Management.Automation.ActionPreference]::SilentlyContinue
+                    $VerbosePreference     = [System.Management.Automation.ActionPreference]::SilentlyContinue
+                    $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
+                    
+                    $RepositoryInformation = $Using:RepositoryInformation
+                    Find-TFSChange -RepositoryInformation $RepositoryInformation
+                )
+            }
         } -PSComputerName $RunbookWorker -PSCredential $SMACred
 		
-		# Pass in Json version of RepositoryInformation 
-        $TFSChange = ConvertFrom-JSON -InputObject (Find-TFSChange -RepositoryInformationJSON (ConvertTo-JSON -InputObject $RepositoryInformation -Compress) )
         
+		# Pass in Json version of RepositoryInformation 
+        $TFSChangeJSON = Find-TFSChange -RepositoryInformation $RepositoryInformation
+        $TFSChange = ConvertTo-JSON -InputObject $TFSChangeJSON
         Write-Debug -Message "Invoke-TFSRepositorySync: Return from Find-TFSChange with number of updates to process: $($TFSChange.NumberOfItemsUpdated)"
 		
         if($TFSChange.NumberOfItemsUpdated -gt 0)
         {
-            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentChangesetID)..$($TFSChange.LatestChangesetId)]"
+            Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($TFSChange.CurrentCommit)]"
+            Write-Verbose -Message "RepositoryChange [$($TFSChange.UpdatedFiles)]"
             
-			$ReturnInformation = ConvertFrom-JSON (Group-RepositoryFile -Files $TFSChange.Files -RepositoryInformation $RepositoryInformation)
+			$ReturnInformationJSON = Group-RepositoryFile -Files $TFSChange.Files -RepositoryInformation $RepositoryInformation
+            $ReturnInformation = ConvertTo-JSON -InputObject $ReturnInformationJSON
             
-			# Priority over deletes. Sorts .ps1 files before .json files
-            Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
+			Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
-                Write-Verbose -Message "[$($RunbookFilePath)] Starting Processing"
-				Write-Debug -Message "ChangesetID of file: $($TFSChange.LatestChangesetId)"
-				$TagLine = "ChangesetID:$($TFSChange.LatestChangesetId)"
-				Write-Debug -Message "All Runbook files: $($TFSChange.RunbookFiles)"
-				$Runbooks = $TFSChange.RunbookFiles
-				Write-Debug -Message "Runbook file name: $($File.FullPath)"
-				$FileToUpdate = $RunbookFilePath
-				
-				# NOTE: SMACred must have access to read files in local git folder
-				# NOTE: To make processing faster add logic to save reference list generated calling Import-VCSRunbooks each time
-				InlineScript {
-					#Import-Module -Name 'SMARunbooksImportSDK'
-					Import-VCSRunbooks -wfToUpdateList $Using:FileToUpdate `
-									   -wfAllList $Using:Runbooks -Tag $Using:TagLine `
-									   -WebServiceEndpoint $Using:WebServiceEndpoint `
-									   -Port $Using:Port `
-									   -ErrorAction Continue
-									   
-				} -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
-				If($inlError) {
-					Write-Exception -Stream Error -Exception $inlError
-					# Suspend workflow if error is detected
-					Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
-					$inlError = $Null
-				}
-				
-				Checkpoint-Workflow
-			}	
-            Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
-            {
-                Write-Verbose -Message "[$($SettingsFilePath)] Starting Processing"
-                Publish-SMATFSSettingsFileChange -FilePath $SettingsFilePath `
-                                              -CurrentChangesetID $TFSChange.LatestChangesetId `
-                                              -RepositoryName $RepositoryName
-                Write-Verbose -Message "[$($SettingsFilePath)] Finished Processing"
-				Checkpoint-Workflow
-            }
-            foreach($Module in $ReturnInformation.ModuleFiles)
-            {
-                Update-LocalModuleMetadata -ModuleName $Module
+                Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
+                                         -CurrentCommit $TFSChange.CurrentCommit `
+                                         -RepositoryName $RepositoryName
                 Checkpoint-Workflow
             }
+            
+            Foreach($ModulePath in $ReturnInformation.ModuleFiles)
+            {
+                Try
+                {
+                    $PowerShellModuleInformation = Test-ModuleManifest -Path $ModulePath
+                    $ModuleName = $PowerShellModuleInformation.Name -as [string]
+                    $ModuleVersion = $PowerShellModuleInformation.Version -as [string]
+                    $PowerShellModuleInformation = Import-SmaPowerShellModule -ModulePath $ModulePath `
+                                                                              -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
+                                                                              -WebservicePort $CIVariables.WebservicePort `
+                                                                              -Credential $SMACred
+                }
+                Catch
+                {
+                    $Exception = New-Exception -Type 'ImportSmaPowerShellModuleFailure' `
+                                               -Message 'Failed to import a PowerShell module into Sma' `
+                                               -Property @{
+                        'ErrorMessage' = (Convert-ExceptionToString $_) ;
+                        'ModulePath' = $ModulePath ;
+                        'ModuleName' = $ModuleName ;
+                        'ModuleVersion' = $ModuleVersion ;
+                        'PowerShellModuleInformation' = "$(ConvertTo-JSON $PowerShellModuleInformation)" ;
+                        'WebserviceEnpoint' = $CIVariables.WebserviceEndpoint ;
+                        'Port' = $CIVariables.WebservicePort ;
+                        'Credential' = $SMACred.UserName ;
+                    }
+                    Write-Warning -Message $Exception -WarningAction Continue
+                }
+                
+                Checkpoint-Workflow
+            }
+            
+            $Runbooks = $TFSChange.RunbookFiles
+            $FileToUpdate = $TFSChange.UpdatedFiles
+            
+            # NOTE: SMACred must have access to read files in local TFS folder
+            InlineScript {
+                #Import-Module -Name 'SMARunbooksImportSDK'
+                Import-VCSRunbooks -WFsToUpdate $Using:FileToUpdate `
+                                   -wfAllList $Using:Runbooks `
+                                   -WebServiceEndpoint $Using:WebServiceEndpoint `
+                                   -Port $Using:Port `
+                                   -ErrorAction Continue
+                                   
+            } -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
+            If($inlError) {
+                Write-Exception -Stream Error -Exception $inlError
+                # Suspend workflow if error is detected
+                Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
+                $inlError = $Null
+                
+            }
+            Checkpoint-Workflow
+
             if($ReturnInformation.CleanRunbooks)
             {
                 Remove-SmaOrphanRunbook -RepositoryName $RepositoryName
@@ -101,25 +134,47 @@ Workflow Invoke-TFSRepositorySync
                 Remove-SmaOrphanAsset -RepositoryName $RepositoryName
                 Checkpoint-Workflow
             }
-            if($ReturnInformation.ModuleFiles)
+            if($ReturnInformation.CleanModules)
             {
-                $RepositoryModulePath = "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)"
-                inlinescript
-                {
-                    Add-PSEnvironmentPathLocation -Path $Using:RepositoryModulePath
-                } -PSComputerName $RunbookWorker -PSCredential $SMACred
+                Remove-SmaOrphanModule
                 Checkpoint-Workflow
             }
-            $UpdatedRepositoryInformation = Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
-                                                                                      -Path $Path `
-                                                                                      -Commit $TFSChange.LatestChangesetId
+            if($ReturnInformation.ModuleFiles)
+            {
+                Try
+                {
+                    Write-Verbose -Message 'Validating Module Path on Runbook Wokers'
+                    $RepositoryModulePath = "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)"
+                    inlinescript
+                    {
+                        Add-PSEnvironmentPathLocation -Path $Using:RepositoryModulePath
+                    } -PSComputerName $RunbookWorker -PSCredential $SMACred
+                    Write-Verbose -Message 'Finished Validating Module Path on Runbook Wokers'
+                }
+                Catch
+                {
+                    $Exception = New-Exception -Type 'PowerShellModulePathValidationError' `
+                                               -Message 'Failed to set PSModulePath' `
+                                               -Property @{
+                        'ErrorMessage' = (Convert-ExceptionToString $_) ;
+                        'RepositoryModulePath' = $RepositoryModulePath ;
+                        'RunbookWorker' = $RunbookWorker ;
+                    }
+                    Write-Warning -Message $Exception -WarningAction Continue
+                }
+                
+                Checkpoint-Workflow
+            }
+            $UpdatedRepositoryInformation = (Set-SmaRepositoryInformationCommitVersion -RepositoryInformation $CIVariables.RepositoryInformation `
+                                                                                       -RepositoryName $RepositoryName `
+                                                                                       -Commit $TFSChange.CurrentCommit) -as [string]
             Set-smavariable -Name 'SMAContinuousIntegration-RepositoryInformation' `
                             -Value $UpdatedRepositoryInformation `
                             -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
                             -Port $CIVariables.WebservicePort `
                             -Credential $SMACred
 
-            Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentChangesetID)..$($TFSChange.LatestChangesetId)]"
+            Write-Verbose -Message "Finished Processing [$($RepositoryInformation.CurrentCommit)..$($TFSChange.CurrentCommit)]"
         }
         Else {
                 Write-Verbose -Message "No updates found in TFS"

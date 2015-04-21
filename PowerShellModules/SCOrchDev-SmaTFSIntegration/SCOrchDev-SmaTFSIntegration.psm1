@@ -9,17 +9,18 @@ Function Get-SmaWorkflowNameFromFile
 {
     Param([Parameter(Mandatory=$true)][string] $FilePath)
 
-    $FileContent = Get-Content $FilePath
-    if("$FileContent" -match '(?im)workflow\s+([^\s]+)')
+    $DeclaredCommands = Find-DeclaredCommand -Path $FilePath
+    Foreach($Command in $DeclaredCommands.Keys)
     {
-        return $Matches[1]
+        if($DeclaredCommands.$Command.Type -eq 'Workflow') 
+        { 
+            return $Command -as [string]
+        }
     }
-    else
-    {
-        Throw-Exception -Type 'WorkflowNameNotFound' `
+    $FileContent = Get-Content $FilePath
+    Throw-Exception -Type 'WorkflowNameNotFound' `
                         -Message 'Could not find the workflow tag and corresponding workflow name' `
                         -Property @{ 'FileContent' = "$FileContent" }
-    }
 }
 <#
     .Synopsis
@@ -30,7 +31,7 @@ Function Get-SmaWorkflowNameFromFile
     .Parameter TagLine
         The current tag string from an SMA runbook
 
-    .Parameter CurrentChangesetID
+    .Parameter CurrentCommit
         The current commit string
 
     .Parameter RepositoryName
@@ -39,22 +40,22 @@ Function Get-SmaWorkflowNameFromFile
 Function New-SmaChangesetTagLine
 {
     Param([Parameter(Mandatory=$false)][string] $TagLine,
-          [Parameter(Mandatory=$true)][string]  $CurrentChangesetID,
+          [Parameter(Mandatory=$true)][string]  $CurrentCommit,
           [Parameter(Mandatory=$true)][string]  $RepositoryName)
 
     $NewVersion = $False
-    if($TagLine -match 'CurrentChangesetID:([^;]+);')
+    if($TagLine -match 'CurrentCommit:([^;]+);')
     {
-        if($Matches[1] -ne $CurrentChangesetID)
+        if($Matches[1] -ne $CurrentCommit)
         {
             $NewVersion = $True
-            $TagLine = $TagLine.Replace($Matches[1],$CurrentChangesetID) 
+            $TagLine = $TagLine.Replace($Matches[1],$CurrentCommit) 
         }
     }
     else
     {
         Write-Verbose -Message "[$TagLine] Did not have a current commit tag."
-        $TagLine = "CurrentChangesetID:$($CurrentChangesetID);$($TagLine)"
+        $TagLine = "CurrentCommit:$($CurrentCommit);$($TagLine)"
         $NewVersion = $True
     }
     if($TagLine -match 'RepositoryName:([^;]+);')
@@ -72,7 +73,8 @@ Function New-SmaChangesetTagLine
         $NewVersion = $True
     }
     return (ConvertTo-JSON -InputObject @{'TagLine' = $TagLine ;
-										  'NewVersion' = $NewVersion } -Compress)
+                                          'NewVersion' = $NewVersion } `
+                           -Compress)
 }
 <#
     .Synopsis
@@ -86,8 +88,7 @@ Function Get-SmaGlobalFromFile
     Param([Parameter(Mandatory=$false)]
           [string] 
           $FilePath,
-          
-          [ValidateSet('Variables','Schedules','Connections')]
+          [ValidateSet('Variables','Schedules','Connections','Credentials')]
           [Parameter(Mandatory=$false)]
           [string] 
           $GlobalType )
@@ -154,9 +155,9 @@ Function Set-SmaRepositoryInformationCommitVersion
           [Parameter(Mandatory=$false)][string] $Commit)
     
     $_RepositoryInformation = (ConvertFrom-JSON $RepositoryInformation)
-    $_RepositoryInformation."$RepositoryName".CurrentChangesetID = $Commit
+    $_RepositoryInformation."$RepositoryName".CurrentCommit = $Commit
 
-    return (ConvertTo-Json -InputObject $_RepositoryInformation -Compress)
+    return (ConvertTo-Json $_RepositoryInformation -Compress)
 }
 Function Get-GitRepositoryWorkflowName
 {
@@ -180,7 +181,7 @@ Function Get-GitRepositoryVariableName
     $RunbookNames = @()
     $RunbookFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
-                                  -Recurse:$True `
+                                  -Recurse `
                                   -File:$True `
 								  -Exclude '*-automation.json'
     foreach($RunbookFile in $RunbookFiles)
@@ -195,7 +196,8 @@ Function Get-GitRepositoryAssetName
 
     $Assets = @{ 'Variable' = @() ;
                  'Schedule' = @() ;
-				 'Connection' = @()	
+				 'Connection' = @();
+                 'Credential' = @()
 				}
     $AssetFiles = Get-ChildItem -Path $Path `
                                   -Filter '*.json' `
@@ -208,6 +210,7 @@ Function Get-GitRepositoryAssetName
         $VariableJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Variables
         $ScheduleJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Schedules
 		$ConnectionJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Connections
+        $CredentialJSON = Get-SmaGlobalFromFile -FilePath $AssetFile.FullName -GlobalType Credentials
         if($VariableJSON)
         {
             Foreach($VariableName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $VariableJSON)).Keys)
@@ -222,11 +225,18 @@ Function Get-GitRepositoryAssetName
                 $Assets.Schedule += $ScheduleName
             }
         }
-		if($ConnectionJSON)
+		if($CredentialJSON)
         {
-            Foreach($ConnectionName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $ConnectionJSON)).Keys)
+            Foreach($CredentialName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $CredentialJSON)).Keys)
             {
-                $Assets.Connection += $ConnectionName
+                $Assets.Credential += $CredentialName
+            }
+        }
+        if($ConnectionJSON)
+        {
+            Foreach($CredentialName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $CredentialJSON)).Keys)
+            {
+                $Assets.Credential += $CredentialName
             }
         }
     }
@@ -236,7 +246,6 @@ Function Get-GitRepositoryAssetName
     .Synopsis 
         Groups all files that will be processed.
         # TODO put logic for import order here
-        # TODO Remove duplicates
     .Parameter Files
         The files to sort
     .Parameter RepositoryInformation
@@ -245,7 +254,7 @@ Function Group-RepositoryFile
 {
     Param([Parameter(Mandatory=$True)] $Files,
           [Parameter(Mandatory=$True)] $RepositoryInformation)
-
+    Write-Verbose -Message "Starting [Group-RepositoryFile]"
     $_Files = ConvertTo-Hashtable -InputObject $Files -KeyName FileExtension
     $ReturnObj = @{ 'ScriptFiles' = @() ;
                     'SettingsFiles' = @() ;
@@ -254,50 +263,62 @@ Function Group-RepositoryFile
 					'IntegrationModules' = @() ;
                     'CleanRunbooks' = $False ;
                     'CleanAssets' = $False ;
+                    'CleanModules' = $False ;
                     'ModulesUpdated' = $False }
 
     # Process PS1 Files
-    $PowerShellScriptFiles = ConvertTo-HashTable $_Files.'.ps1' -KeyName 'FileName'
-    foreach($ScriptName in $PowerShellScriptFiles.Keys)
+    try
     {
-        if($PowerShellScriptFiles."$ScriptName".ChangeType -contains 'M' -or
-           $PowerShellScriptFiles."$ScriptName".ChangeType -contains 'A')
+        $PowerShellScriptFiles = ConvertTo-HashTable $_Files.'.ps1' -KeyName 'FileName'
+        Write-Verbose -Message "Found Powershell Files"
+        foreach($ScriptName in $PowerShellScriptFiles.Keys)
         {
-            foreach($Path in $PowerShellScriptFiles."$ScriptName".FullPath)
+            if($PowerShellScriptFiles."$ScriptName".ChangeType -contains 'M' -or
+               $PowerShellScriptFiles."$ScriptName".ChangeType -contains 'A')
             {
-                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                foreach($Path in $PowerShellScriptFiles."$ScriptName".FullPath)
                 {
-                    $ReturnObj.ScriptFiles += $Path
-                    break
-                }
-            }            
-        }
-        else
-        {
-            $ReturnObj.CleanRunbooks = $True
-        }
-    }
-
-    # Process Settings Files
-    $SettingsFiles = ConvertTo-HashTable $_Files.'.json' -KeyName 'FileName'
-    foreach($SettingsFileName in $SettingsFiles.Keys)
-    {
-        if($SettingsFiles."$SettingsFileName".ChangeType -contains 'M' -or
-           $SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
-        {
-            foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
+                    if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                    {
+                        $ReturnObj.ScriptFiles += $Path
+                        break
+                    }
+                }            
+            }
+            else
             {
-                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
-                {
-                    $ReturnObj.CleanAssets = $True
-                    $ReturnObj.SettingsFiles += $Path
-                    break
-                }
+                $ReturnObj.CleanRunbooks = $True
             }
         }
-        else
+    }
+    catch
+    {
+        Write-Verbose -Message "No Powershell Files found"
+    }
+    try
+    {
+        # Process Settings Files
+        $SettingsFiles = ConvertTo-HashTable $_Files.'.json' -KeyName 'FileName'
+        Write-Verbose -Message "Found Settings Files"
+        foreach($SettingsFileName in $SettingsFiles.Keys)
         {
-            $ReturnObj.CleanAssets = $True
+            if($SettingsFiles."$SettingsFileName".ChangeType -contains 'M' -or
+               $SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
+            {
+                foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
+                {
+                    if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
+                    {
+                        $ReturnObj.CleanAssets = $True
+                        $ReturnObj.SettingsFiles += $Path
+                        break
+                    }
+                }
+            }
+            else
+            {
+                $ReturnObj.CleanAssets = $True
+            }
         }
     }	
 	# Process Settings Files again to find automation json files
@@ -324,15 +345,17 @@ Function Group-RepositoryFile
             }
         }
     }
-		
-    $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
-    foreach($PSModuleName in $PSModuleFiles.Keys)
+    catch
     {
-        if($PSModuleFiles."$PSModuleName".ChangeType -contains 'M' -or
-           $PSModuleFiles."$PSModuleName".ChangeType -contains 'A')
+        Write-Verbose -Message "No Settings Files found"
+    }
+    try
+    {
+        $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
+        Write-Verbose -Message "Found Powershell Module Files"
+        foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
         {
-            foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
-            {
+
                 if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*" )
 				{
                     if( $ReturnObj.AutomationJSONFiles ) 
@@ -359,13 +382,57 @@ Function Group-RepositoryFile
 						$ReturnObj.ModuleFiles += $Path
 						break
 					}
-                }
+            }
+            else
+            {
+                $ReturnObj.CleanModules = $True
             }
         }
-        if($ReturnObj.UpdatePSModules) { break }
     }
-
-    Return (ConvertTo-JSON -InputObject $ReturnObj -Compress)
+    catch
+    {
+        Write-Verbose -Message "No Powershell Module Files found"
+    }
+    Write-Verbose -Message "Finished [Group-RepositoryFile]"
+    Return (ConvertTo-JSON $ReturnObj -Compress)
+}
+<#
+    .Synopsis
+        Groups a list of SmaRunbooks by the RepositoryName from the
+        tag line
+#>
+Function Group-SmaRunbooksByRepository
+{
+    Param([Parameter(Mandatory=$True)] $InputObject)
+    ConvertTo-Hashtable -InputObject $InputObject `
+                        -KeyName 'Tags' `
+                        -KeyFilterScript { 
+                            Param($KeyName)
+                            if($KeyName -match 'RepositoryName:([^;]+);')
+                            {
+                                $Matches[1]
+                            }
+                        }
+}
+<#
+    .Synopsis
+        Groups a list of SmaRunbooks by the RepositoryName from the
+        tag line
+#>
+Function Group-SmaAssetsByRepository
+{
+    Param(
+    [Parameter(Mandatory=$True)] $InputObject
+    )
+    ConvertTo-Hashtable -InputObject $InputObject `
+                        -KeyName 'Description' `
+                        -KeyFilterScript { 
+                            Param($KeyName)
+                            if($KeyName -match 'RepositoryName:([^;]+);')
+                            {
+                                $Matches[1]
+                            }
+                        }
 }
 <#
     .Synopsis
@@ -396,9 +463,10 @@ Function Find-TFSChange
         Write-Verbose -Message "Updating TFS Workspace $TFSServerCollection"
 
         $TFSRoot   = [System.String]::Empty
-		$ReturnObj = @{
+		# To keep code changes to minimum in rest of code CurrentCommit is used instead of LatestChangesetId
+        $ReturnObj = @{
 						'NumberOfItemsUpdated' = 0;
-						'LatestChangesetId' = 0;
+						'CurrentCommit' = 0;
                         'RunbookFiles' = @();
                         'UpdatedFiles' = @()
 					}
@@ -415,7 +483,8 @@ Function Find-TFSChange
             $vcs                   = $tfsTeamProjCollection.GetService([Type]"Microsoft.TeamFoundation.VersionControl.Client.VersionControlServer")
 
             # Get the latest changeset ID from TFS
-            $ReturnObj.LatestChangesetId = [int]($vcs.GetLatestChangesetId())
+            
+            $ReturnObj.CurrentCommit = [int]($vcs.GetLatestChangesetId())
 
             # Setting up your workspace and source path you are managing
             $vcsWorkspace = $vcs.GetWorkspace($RepositoryInformation.TFSSourcePath)
@@ -455,20 +524,21 @@ Function Find-TFSChange
                             $FileExtension = ($FileExtension[-1]).ToLower()
 							
                             # Build list of all ps1 files in TFS folder filtered for files only in Runbook folder, use for building workflow dependencies later
-                            If(($FileExtension -eq "ps1") -and ($ServerPath -like $RepositoryInformation.RunBookFolder)) {
+                            If( $FileExtension -eq "ps1" -and $ServerPath -like $RepositoryInformation.RunBookFolder ) {
                                 # Create file list of all ps1 files in TFS folder Runbooks (filtered for branch)
                                 $ReturnObj.RunbookFiles += $ServerPath
                             }
-                            
-                            If($item.ChangesetID -gt $RepositoryInformation.LastChangesetID)
+                            # Only process changed files in the runbook folder
+                            If( $item.ChangesetID -gt $RepositoryInformation.LastChangesetID -and $ServerPath -like $RepositoryInformation.RunBookFolder )
                             {
                                 Write-Debug -Message  "Found item with higher changeset ID, old: $($RepositoryInformation.LastChangesetID) new: $ChangesetID"
 								$ReturnObj.NumberOfItemsUpdated += 1
-								$ReturnObj.UpdatedFiles += @{ 	
+								
+                                $ReturnObj.UpdatedFiles += @{ 	
 																'FullPath' 		= 	$ServerPath;
 																'FileName' 		=	$ServerPath.Split('\')[-1];
 																'FileExtension' = 	$FileExtension;
-																'ChangesetID' 	= 	$ChangesetID
+																'ChangesetID'	= 	$ChangesetID
 															}
                             }
                         }
