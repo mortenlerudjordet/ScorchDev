@@ -44,7 +44,7 @@ Function New-SmaChangesetTagLine
           [Parameter(Mandatory=$true)][string]  $RepositoryName)
 
     $NewVersion = $False
-    if($TagLine -match 'CurrentCommit:([^;]+);')
+    if($TagLine -match 'ChangeSetID:([^;]+);')
     {
         if($Matches[1] -ne $CurrentCommit)
         {
@@ -55,7 +55,7 @@ Function New-SmaChangesetTagLine
     else
     {
         Write-Verbose -Message "[$TagLine] Did not have a current commit tag."
-        $TagLine = "CurrentCommit:$($CurrentCommit);$($TagLine)"
+        $TagLine = "ChangeSetID:$($CurrentCommit);$($TagLine)"
         $NewVersion = $True
     }
     if($TagLine -match 'RepositoryName:([^;]+);')
@@ -260,7 +260,7 @@ Function Group-RepositoryFile
                     'SettingsFiles' = @() ;
                     'ModuleFiles' = @() ;
 					'AutomationJSONFiles' = @() ;
-					'IntegrationModules' = @() ;
+					'IntegrationModuleFiles' = @() ;
                     'CleanRunbooks' = $False ;
                     'CleanAssets' = $False ;
                     'CleanModules' = $False ;
@@ -273,9 +273,8 @@ Function Group-RepositoryFile
         Write-Verbose -Message "Found Powershell Files"
         foreach($ScriptName in $PowerShellScriptFiles.Keys)
         {
-            if($PowerShellScriptFiles."$ScriptName".ChangeType -contains 'M' -or
-               $PowerShellScriptFiles."$ScriptName".ChangeType -contains 'A')
-            {
+            if($SettingsFiles."$SettingsFileName".ChangeType -eq 'A')
+            {             
                 foreach($Path in $PowerShellScriptFiles."$ScriptName".FullPath)
                 {
                     if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.RunbookFolder)\*")
@@ -283,12 +282,12 @@ Function Group-RepositoryFile
                         $ReturnObj.ScriptFiles += $Path
                         break
                     }
-                }            
+                }
             }
             else
             {
                 $ReturnObj.CleanRunbooks = $True
-            }
+            }            
         }
     }
     catch
@@ -302,8 +301,7 @@ Function Group-RepositoryFile
         Write-Verbose -Message "Found Settings Files"
         foreach($SettingsFileName in $SettingsFiles.Keys)
         {
-            if($SettingsFiles."$SettingsFileName".ChangeType -contains 'M' -or
-               $SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
+            if($SettingsFiles."$SettingsFileName".ChangeType -eq 'A')
             {
                 foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
                 {
@@ -325,22 +323,19 @@ Function Group-RepositoryFile
     foreach($SettingsFileName in $SettingsFiles.Keys)
     {
         # Only process new json files
-		if($SettingsFiles."$SettingsFileName".ChangeType -contains 'A')
+        foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
         {
-            foreach($Path in $SettingsFiles."$SettingsFileName".FullPath)
+            # Find Integration Module json files
+            if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
             {
-                # Find Integration Module json files
-				if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
+                if($Path.Split('\')[-1] -like "*-automation.json") 
                 {
-					if($Path.Split('\')[-1] -like "*-automation.json") 
-					{
-						Write-Debug -Message "Found automation json file: $($Path.Split('\')[-1])"
-						$ReturnObj.AutomationJSONFiles += $Path
-						break
-					}
-					else {
-						Write-Debug -Message "No automation json file found"
-					}
+                    Write-Debug -Message "Found automation json file: $($Path.Split('\')[-1])"
+                    $ReturnObj.AutomationJSONFiles += $Path
+                    break
+                }
+                else {
+                    Write-Debug -Message "No automation json file found"
                 }
             }
         }
@@ -349,39 +344,47 @@ Function Group-RepositoryFile
     {
         Write-Verbose -Message "No Settings Files found"
     }
-    try
+try
     {
         $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
-        Write-Verbose -Message "Found Powershell Module Files"
-        foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
+        Write-Verbose -Message 'Found Powershell Module Files'
+        foreach($PSModuleName in $PSModuleFiles.Keys)
         {
-
-                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*" )
-				{
-                    if( $ReturnObj.AutomationJSONFiles ) 
-					{
-						if( $ReturnObj.AutomationJSONFiles | Where-Object -FilterScript `
-							{ 
-								($_.Split('\')[-1]).Replace('-automation.json', "") -eq ($Path.Split('\')[-1]).Replace('.psd1', "")
-							}
-							Write-Debug -Message "Module is an Integration Module with an Automation JSON file"
-							Write-Debug -Message "File: $($Path) will not be processed as a local PSmodule"
-							$ReturnObj.IntegrationModules += $Path
-							break
-						)
-						else 
-						{
-							Write-Debug -Message "Module is not an Integration Module with an Automation JSON file"
-							$ReturnObj.ModulesUpdated = $True
-							$ReturnObj.ModuleFiles += $Path
-							break						
-						}
-					}
-					else {
-						$ReturnObj.ModulesUpdated = $True
-						$ReturnObj.ModuleFiles += $Path
-						break
-					}
+            if($PSModuleFiles."$PSModuleName".ChangeType -eq 'A')
+            {
+                foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
+                {
+                    if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
+                    {
+                        if( $ReturnObj.AutomationJSONFiles ) 
+                        {
+                            # TODO: Test that multiple automation files can be compared in one go
+                            if( $ReturnObj.AutomationJSONFiles | Where-Object -FilterScript `
+                                { 
+                                    ($_.Split('\')[-1]).Replace('-automation.json', "") -eq ($Path.Split('\')[-1]).Replace('.psd1', "")
+                                }
+                            )
+                                Write-Debug -Message "Module is an Integration Module with an Automation JSON file"
+                                Write-Debug -Message "File: $($Path) will not be processed as a standard PSmodule"
+                                $ReturnObj.ModulesUpdated = $True
+                                $ReturnObj.IntegrationModuleFiles += $Path
+                                break
+                            )
+                            else 
+                            {
+                                Write-Debug -Message "Module is not an Integration Module with an Automation JSON file"
+                                $ReturnObj.ModulesUpdated = $True
+                                $ReturnObj.ModuleFiles += $Path
+                                break						
+                            }
+                        }
+                        else {
+                            $ReturnObj.ModulesUpdated = $True
+                            $ReturnObj.ModuleFiles += $Path
+                            break
+                        }
+                    }
+                }
             }
             else
             {
@@ -468,7 +471,7 @@ Function Find-TFSChange
 						'NumberOfItemsUpdated' = 0;
 						'CurrentCommit' = 0;
                         'RunbookFiles' = @();
-                        'UpdatedFiles' = @()
+                        'Files' = @()
 					}
 		
         Try
@@ -497,7 +500,11 @@ Function Find-TFSChange
             {
                 Write-Verbose -Message "Changes Found, Processing"
                 Write-Verbose -Message "Number of changes to process: $($changes.NumUpdated)"
-                $allItems = $vcs.GetItems($RepositoryInformation.TFSSourcePath,2)
+                $allItems = $vcs.GetItems($RepositoryInformation.TFSSourcePath,
+                                        [Microsoft.TeamFoundation.VersionControl.Client.VersionSpec]::Latest,
+                                        [Microsoft.TeamFoundation.VersionControl.Client.RecursionType]::Full,
+                                        [Microsoft.TeamFoundation.VersionControl.Client.DeletedState]::Any,
+                                        [Microsoft.TeamFoundation.VersionControl.Client.ItemType]::File )
                 $TFSRoot  = ($allItems.QueryPath).ToLower()
                 Write-Debug -Message "TFS Item Count: $($allItems.Items.Count)"
 				Write-Debug -Message "TFS Root Path: $($TFSRoot)"
@@ -512,6 +519,7 @@ Function Find-TFSChange
                     If($BranchFolder -eq (($RepositoryInformation.Branch).ToLower()))
                     {
                         Write-Debug -Message  "Match found for branch folder: $($BranchFolder)"
+                        # This is redundant as we only get files from TFS
                         If($item.ItemType -eq "File")
                         {
                             Write-Debug -Message  "Changeset ID: $($item.ChangesetID)"
@@ -523,36 +531,78 @@ Function Find-TFSChange
                             $FileExtension = $ServerItem.Split('.')
                             $FileExtension = ($FileExtension[-1]).ToLower()
 							
-                            # Build list of all ps1 files in TFS folder filtered for files only in Runbook folder, use for building workflow dependencies later
-                            If( $FileExtension -eq "ps1" -and $ServerPath -like $RepositoryInformation.RunBookFolder ) {
+                            # Build list of all ps1 files in TFS folder filtered to include non deleted runbooks only
+                            If( $FileExtension -eq "ps1" -and $ServerPath -like $RepositoryInformation.RunBookFolder -and $item.DeletionId -eq 0) {
                                 # Create file list of all ps1 files in TFS folder Runbooks (filtered for branch)
                                 $ReturnObj.RunbookFiles += $ServerPath
                             }
-                            # Only process changed files in the runbook folder
-                            If( $item.ChangesetID -gt $RepositoryInformation.LastChangesetID -and $ServerPath -like $RepositoryInformation.RunBookFolder )
+                            If( $item.ChangesetID -gt $RepositoryInformation.CurrentCommit)
                             {
-                                Write-Debug -Message  "Found item with higher changeset ID, old: $($RepositoryInformation.LastChangesetID) new: $ChangesetID"
-								$ReturnObj.NumberOfItemsUpdated += 1
+                                $ReturnObj.Files
+                                Write-Debug -Message  "Found item with higher changeset ID, old: $($RepositoryInformation.CurrentCommit) new: $($item.ChangesetID)"
 								
-                                $ReturnObj.UpdatedFiles += @{ 	
-																'FullPath' 		= 	$ServerPath;
-																'FileName' 		=	$ServerPath.Split('\')[-1];
-																'FileExtension' = 	$FileExtension;
-																'ChangesetID'	= 	$ChangesetID
-															}
+								# check that the same file is not already added, if so keep the one with highest changesetID
+                                If( $ReturnObj.Files | Where-Object -FilterScript {$_.FileName -eq $ServerPath.Split('\')[-1]} ) {
+                                    $ReturnObj.Files | Where-Object -FilterScript {
+                                        If($_.FileName -eq $ServerPath.Split('\')[-1]) {
+                                          # Check which of the duplicate files have the highest changeset number, keep the highest one
+                                          If( $_.ChangesetID -lt $item.ChangesetID) {
+                                            Write-Debug -Message "Last duplicate file has the highest changeset number, updating to new value"
+                                            $_.ChangesetID = $item.ChangesetID
+                                          }
+                                          Else {
+                                            Write-Debug -Message "First duplicate file has the highest changeset number, keeping the value"
+                                          }
+                                          If($item.DeletionId -eq 0) {
+                                            Write-Debug -Message "Last duplicate file has the highest changeset number, updating changetype value to new"
+                                            $_.ChangeType = "A"
+                                          }
+                                          Else {
+                                            Write-Debug -Message "Last duplicate file has the highest changeset number, updating changetype value to deleted"
+                                            $_.ChangeType = "D"
+                                          }
+                                        }
+                                        Else {
+                                            Write-Debug -Message "No duplicate file found"
+                                        }
+                                    }
+                                }
+                                # Check that processed file is not deleted
+                                ElseIf($item.DeletionId -eq 0) {
+                                    $ReturnObj.NumberOfItemsUpdated += 1
+                                    # ChangeType is set to A so can use same code as original (Git)
+                                    $ReturnObj.Files += @{ 	
+                                                                    'FullPath' 		= 	$ServerPath;
+                                                                    'FileName' 		=	$ServerPath.Split('\')[-1];
+                                                                    'FileExtension' = 	$FileExtension;
+                                                                    'ChangesetID'	= 	$item.ChangesetID;
+                                                                    'ChangeType'    =   "A"
+                                                                }
+                                }
+                                # If deletionId is other than 0 we assume the file is deleted
+                                Else {
+                                     
+                                     $ReturnObj.Files += @{ 	
+                                            'FullPath' 		= 	$ServerPath;
+                                            'FileName' 		=	$ServerPath.Split('\')[-1];
+                                            'FileExtension' = 	$FileExtension;
+                                            'ChangesetID'	= 	$ChangesetID;
+                                            'ChangeType'    =   "D"
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
             Else {
-                Write-Debug -Message "No updates detected"
+                Write-Verbose -Message "No updates found in TFS"
             }
         }
         Catch {
                 Write-Exception -Stream Error -Exception $_
         }
-        Write-Verbose -Message "Number of files in TFS altered: $($ReturnObj.NumberOfItemsUpdated)"
+        Write-Verbose -Message "Number of files in TFS altered: $($ReturnObj.NumberOfItemsUpdated)"      
         # Use compress to handle higher content volume, in some instances errors are thrown when converting back from JSON
         Return (ConvertTo-Json -InputObject $ReturnObj -Compress)
 }

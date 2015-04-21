@@ -260,7 +260,7 @@ Function Group-RepositoryFile
                     'SettingsFiles' = @() ;
                     'ModuleFiles' = @() ;
 					'AutomationJSONFiles' = @() ;
-					'IntegrationModules' = @() ;
+					'IntegrationModuleFiles' = @() ;
                     'CleanRunbooks' = $False ;
                     'CleanAssets' = $False ;
                     'CleanModules' = $False ;
@@ -352,36 +352,45 @@ Function Group-RepositoryFile
     try
     {
         $PSModuleFiles = ConvertTo-HashTable $_Files.'.psd1' -KeyName 'FileName'
-        Write-Verbose -Message "Found Powershell Module Files"
-        foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
+        Write-Verbose -Message 'Found Powershell Module Files'
+        foreach($PSModuleName in $PSModuleFiles.Keys)
         {
-
-                if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*" )
-				{
-                    if( $ReturnObj.AutomationJSONFiles ) 
-					{
-						if( $ReturnObj.AutomationJSONFiles | Where-Object -FilterScript `
-							{ 
-								($_.Split('\')[-1]).Replace('-automation.json', "") -eq ($Path.Split('\')[-1]).Replace('.psd1', "")
-							}
-							Write-Debug -Message "Module is an Integration Module with an Automation JSON file"
-							Write-Debug -Message "File: $($Path) will not be processed as a local PSmodule"
-							$ReturnObj.IntegrationModules += $Path
-							break
-						)
-						else 
-						{
-							Write-Debug -Message "Module is not an Integration Module with an Automation JSON file"
-							$ReturnObj.ModulesUpdated = $True
-							$ReturnObj.ModuleFiles += $Path
-							break						
-						}
-					}
-					else {
-						$ReturnObj.ModulesUpdated = $True
-						$ReturnObj.ModuleFiles += $Path
-						break
-					}
+            if($PSModuleFiles."$PSModuleName".ChangeType -contains 'M' -or
+               $PSModuleFiles."$PSModuleName".ChangeType -contains 'A')
+            {
+                foreach($Path in $PSModuleFiles."$PSModuleName".FullPath)
+                {
+                    if($Path -like "$($RepositoryInformation.Path)\$($RepositoryInformation.PowerShellModuleFolder)\*")
+                    {
+                        # TODO: Test that multiple automation files can be compared in one go
+                        if( $ReturnObj.AutomationJSONFiles ) 
+                        {
+                            if( $ReturnObj.AutomationJSONFiles | Where-Object -FilterScript `
+                                { 
+                                    ($_.Split('\')[-1]).Replace('-automation.json', "") -eq ($Path.Split('\')[-1]).Replace('.psd1', "")
+                                }
+                            )
+                                Write-Debug -Message "Module is an Integration Module with an Automation JSON file"
+                                Write-Debug -Message "File: $($Path) will not be processed as a standard PSmodule"
+                                $ReturnObj.ModulesUpdated = $True
+                                $ReturnObj.IntegrationModuleFiles += $Path
+                                break
+                            )
+                            else 
+                            {
+                                Write-Debug -Message "Module is not an Integration Module with an Automation JSON file"
+                                $ReturnObj.ModulesUpdated = $True
+                                $ReturnObj.ModuleFiles += $Path
+                                break						
+                            }
+                        }
+                        else {
+                            $ReturnObj.ModulesUpdated = $True
+                            $ReturnObj.ModuleFiles += $Path
+                            break
+                        }
+                    }
+                }
             }
             else
             {
@@ -391,7 +400,7 @@ Function Group-RepositoryFile
     }
     catch
     {
-        Write-Verbose -Message "No Powershell Module Files found"
+        Write-Verbose -Message 'No Powershell Module Files found'
     }
     Write-Verbose -Message "Finished [Group-RepositoryFile]"
     Return (ConvertTo-JSON $ReturnObj -Compress)

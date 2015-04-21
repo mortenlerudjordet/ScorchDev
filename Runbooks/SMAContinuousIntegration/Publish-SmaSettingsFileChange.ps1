@@ -232,8 +232,7 @@ Workflow Publish-SMASettingsFileChange
 					else 
 					{
 						# No Connection object exist in SMA, create new one
-						
-						
+
 						$FieldValues = ConvertFrom-PSCustomObject -InputObject $Connection
 						$ConnectionFieldValues = New-Object -TypeName psobject
 						foreach($FieldValue in $FieldValues.Keys) 

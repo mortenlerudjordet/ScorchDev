@@ -58,13 +58,13 @@ Workflow Invoke-TFSRepositorySync
         if($TFSChange.NumberOfItemsUpdated -gt 0)
         {
             Write-Verbose -Message "Processing [$($RepositoryInformation.CurrentCommit)..$($TFSChange.CurrentCommit)]"
-            Write-Verbose -Message "RepositoryChange [$($TFSChange.UpdatedFiles)]"
+            Write-Verbose -Message "RepositoryChange [$TFSChangeJSON]"
             
 			$ReturnInformationJSON = Group-RepositoryFile -Files $TFSChange.Files -RepositoryInformation $RepositoryInformation
             $ReturnInformation = ConvertTo-JSON -InputObject $ReturnInformationJSON
             
-            # Integration Modules with automation json file must be imported before assets are added to SMA
-            Foreach($ModulePath in $ReturnInformation.ModuleFiles)
+                        # Integration Modules must be imported first as they contain potential connection templates in automation json file
+            Foreach($ModulePath in $ReturnInformation.IntegrationModuleFiles)
             {
                 Try
                 {
@@ -99,19 +99,51 @@ Workflow Invoke-TFSRepositorySync
             Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
                 Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
-                                         -CurrentCommit $TFSChange.CurrentCommit `
+                                         -CurrentCommit $RepositoryChange.CurrentCommit `
                                          -RepositoryName $RepositoryName
                 Checkpoint-Workflow
             }
-
-            $Runbooks = $TFSChange.RunbookFiles
-            $FileToUpdate = $TFSChange.UpdatedFiles
             
-            # NOTE: SMACred must have access to read files in local TFS folder
+            Foreach($ModulePath in $ReturnInformation.ModuleFiles)
+            {
+                Try
+                {
+                    $PowerShellModuleInformation = Test-ModuleManifest -Path $ModulePath
+                    $ModuleName = $PowerShellModuleInformation.Name -as [string]
+                    $ModuleVersion = $PowerShellModuleInformation.Version -as [string]
+                    $PowerShellModuleInformation = Import-SmaPowerShellModule -ModulePath $ModulePath `
+                                                                              -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
+                                                                              -WebservicePort $CIVariables.WebservicePort `
+                                                                              -Credential $SMACred
+                }
+                Catch
+                {
+                    $Exception = New-Exception -Type 'ImportSmaPowerShellModuleFailure' `
+                                               -Message 'Failed to import a PowerShell module into Sma' `
+                                               -Property @{
+                        'ErrorMessage' = (Convert-ExceptionToString $_) ;
+                        'ModulePath' = $ModulePath ;
+                        'ModuleName' = $ModuleName ;
+                        'ModuleVersion' = $ModuleVersion ;
+                        'PowerShellModuleInformation' = "$(ConvertTo-JSON $PowerShellModuleInformation)" ;
+                        'WebserviceEnpoint' = $CIVariables.WebserviceEndpoint ;
+                        'Port' = $CIVariables.WebservicePort ;
+                        'Credential' = $SMACred.UserName ;
+                    }
+                    Write-Warning -Message $Exception -WarningAction Continue
+                }
+                
+                Checkpoint-Workflow
+            }
+
+            $AllRunbooks = $TFSChange.RunbookFiles
+            $FilesToUpdate = $ReturnInformation.ScriptFiles
+            
+            # NOTE: SMACred must have access to read files in local TFS mapped folder
             InlineScript {
                 #Import-Module -Name 'SMARunbooksImportSDK'
-                Import-VCSRunbooks -WFsToUpdate $Using:FileToUpdate `
-                                   -wfAllList $Using:Runbooks `
+                Import-VCSRunbooks -WFsToUpdate $Using:FilesToUpdate `
+                                   -wfAllList $Using:AllRunbooks `
                                    -WebServiceEndpoint $Using:WebServiceEndpoint `
                                    -Port $Using:Port `
                                    -ErrorAction Continue

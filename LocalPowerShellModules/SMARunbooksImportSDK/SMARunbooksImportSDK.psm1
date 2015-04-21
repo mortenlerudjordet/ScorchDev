@@ -102,8 +102,8 @@ Function Import-VCSRunbooks
         # Only get the name of the file and not the extension
 		Write-Debug -Message "Import-VCSRunbooks: Runbook Name: $(($wf.FileName).Split('.')[-2])"
 		$RunbookDep.RunbookName = ($wf.FileName).Split('.')[-2]
-        Write-Debug -Message "Import-VCSRunbooks: ChangesetID of file: $($wf.CurrentCommit)"
-		$RunbookDep.Tag = "ChangesetID:$($wf.CurrentCommit)"
+        Write-Debug -Message "Import-VCSRunbooks: ChangesetID of file: $($wf.ChangesetID)"
+		$RunbookDep.Tag = "ChangesetID:$($wf.ChangesetID)"
 		# Build dependency tree for updated workflow
 		Write-Verbose -Message "Retrieving all dependencies for: $($RunbookDep.RunbookName)"
 		Write-Debug -Message "Import-VCSRunbooks: calling Get-RunbookDependencies with $($RunbookDep.FullName)"

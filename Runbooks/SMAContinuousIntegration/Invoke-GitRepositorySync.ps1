@@ -56,8 +56,8 @@ Workflow Invoke-GitRepositorySync
             $ReturnInformation = ConvertFrom-Json -InputObject $ReturnInformationJSON
             Write-Verbose -Message "ReturnInformation [$ReturnInformationJSON]"
             
-            # Integration Modules with automation json file must be imported before assets are added to SMA
-            Foreach($ModulePath in $ReturnInformation.ModuleFiles)
+            # Integration Modules must be imported first as they contain potential connection templates in automation json file
+            Foreach($ModulePath in $ReturnInformation.IntegrationModuleFiles)
             {
                 Try
                 {
@@ -94,6 +94,38 @@ Workflow Invoke-GitRepositorySync
                 Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
                                          -CurrentCommit $RepositoryChange.CurrentCommit `
                                          -RepositoryName $RepositoryName
+                Checkpoint-Workflow
+            }
+            
+            Foreach($ModulePath in $ReturnInformation.ModuleFiles)
+            {
+                Try
+                {
+                    $PowerShellModuleInformation = Test-ModuleManifest -Path $ModulePath
+                    $ModuleName = $PowerShellModuleInformation.Name -as [string]
+                    $ModuleVersion = $PowerShellModuleInformation.Version -as [string]
+                    $PowerShellModuleInformation = Import-SmaPowerShellModule -ModulePath $ModulePath `
+                                                                              -WebserviceEndpoint $CIVariables.WebserviceEndpoint `
+                                                                              -WebservicePort $CIVariables.WebservicePort `
+                                                                              -Credential $SMACred
+                }
+                Catch
+                {
+                    $Exception = New-Exception -Type 'ImportSmaPowerShellModuleFailure' `
+                                               -Message 'Failed to import a PowerShell module into Sma' `
+                                               -Property @{
+                        'ErrorMessage' = (Convert-ExceptionToString $_) ;
+                        'ModulePath' = $ModulePath ;
+                        'ModuleName' = $ModuleName ;
+                        'ModuleVersion' = $ModuleVersion ;
+                        'PowerShellModuleInformation' = "$(ConvertTo-JSON $PowerShellModuleInformation)" ;
+                        'WebserviceEnpoint' = $CIVariables.WebserviceEndpoint ;
+                        'Port' = $CIVariables.WebservicePort ;
+                        'Credential' = $SMACred.UserName ;
+                    }
+                    Write-Warning -Message $Exception -WarningAction Continue
+                }
+                
                 Checkpoint-Workflow
             }
             
