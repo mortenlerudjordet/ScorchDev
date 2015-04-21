@@ -50,7 +50,7 @@ Workflow Invoke-TFSRepositorySync
         } -PSComputerName $RunbookWorker -PSCredential $SMACred
 		
         
-		# Pass in Json version of RepositoryInformation 
+		# SMACred must have contribute access to TFS project to fetch new files
         $TFSChangeJSON = Find-TFSChange -RepositoryInformation $RepositoryInformation
         $TFSChange = ConvertTo-JSON -InputObject $TFSChangeJSON
         Write-Debug -Message "Invoke-TFSRepositorySync: Return from Find-TFSChange with number of updates to process: $($TFSChange.NumberOfItemsUpdated)"
@@ -63,17 +63,7 @@ Workflow Invoke-TFSRepositorySync
 			$ReturnInformationJSON = Group-RepositoryFile -Files $TFSChange.Files -RepositoryInformation $RepositoryInformation
             $ReturnInformation = ConvertTo-JSON -InputObject $ReturnInformationJSON
             
-            # TODO: Import Integration Modules and the automation json file before importing settings
-			# Importing a connection object in settings without Integration Module already imported will result in error
-            
-            Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
-            {
-                Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
-                                         -CurrentCommit $TFSChange.CurrentCommit `
-                                         -RepositoryName $RepositoryName
-                Checkpoint-Workflow
-            }
-            
+            # Integration Modules with automation json file must be imported before assets are added to SMA
             Foreach($ModulePath in $ReturnInformation.ModuleFiles)
             {
                 Try
@@ -106,6 +96,14 @@ Workflow Invoke-TFSRepositorySync
                 Checkpoint-Workflow
             }
             
+            Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
+            {
+                Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
+                                         -CurrentCommit $TFSChange.CurrentCommit `
+                                         -RepositoryName $RepositoryName
+                Checkpoint-Workflow
+            }
+
             $Runbooks = $TFSChange.RunbookFiles
             $FileToUpdate = $TFSChange.UpdatedFiles
             

@@ -58,15 +58,6 @@ Workflow Invoke-GitRepositorySync
             
             # TODO: Import Integration Modules and the automation json file before importing settings
             # Importing a connection object in settings without Integration Module already imported will result in error
-            
-            Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
-            {
-                Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
-                                         -CurrentCommit $RepositoryChange.CurrentCommit `
-                                         -RepositoryName $RepositoryName
-                Checkpoint-Workflow
-            }
-            
             Foreach($ModulePath in $ReturnInformation.ModuleFiles)
             {
                 Try
@@ -98,7 +89,15 @@ Workflow Invoke-GitRepositorySync
                 
                 Checkpoint-Workflow
             }
-
+            
+            Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
+            {
+                Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
+                                         -CurrentCommit $RepositoryChange.CurrentCommit `
+                                         -RepositoryName $RepositoryName
+                Checkpoint-Workflow
+            }
+            
             Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
             {
                 Publish-SMARunbookChange -FilePath $RunbookFilePath `
