@@ -56,6 +56,9 @@ Workflow Invoke-GitRepositorySync
             $ReturnInformation = ConvertFrom-Json -InputObject $ReturnInformationJSON
             Write-Verbose -Message "ReturnInformation [$ReturnInformationJSON]"
             
+            # TODO: Import Integration Modules and the automation json file before importing settings
+            # Importing a connection object in settings without Integration Module already imported will result in error
+            
             Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
                 Publish-SMASettingsFileChange -FilePath $SettingsFilePath `

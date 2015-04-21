@@ -234,9 +234,9 @@ Function Get-GitRepositoryAssetName
         }
         if($ConnectionJSON)
         {
-            Foreach($CredentialName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $CredentialJSON)).Keys)
+            Foreach($ConnectionName in (ConvertFrom-PSCustomObject(ConvertFrom-JSON $ConnectionJSON)).Keys)
             {
-                $Assets.Credential += $CredentialName
+                $Assets.Connection += $ConnectionName
             }
         }
     }

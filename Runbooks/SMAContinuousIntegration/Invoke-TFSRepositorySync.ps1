@@ -43,7 +43,8 @@ Workflow Invoke-TFSRepositorySync
                     $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
                     
                     $RepositoryInformation = $Using:RepositoryInformation
-                    Find-TFSChange -RepositoryInformation $RepositoryInformation
+                    # TODO: This will not work find another way of doing this
+                    #Find-TFSChange -RepositoryInformation $RepositoryInformation
                 )
             }
         } -PSComputerName $RunbookWorker -PSCredential $SMACred
@@ -62,7 +63,10 @@ Workflow Invoke-TFSRepositorySync
 			$ReturnInformationJSON = Group-RepositoryFile -Files $TFSChange.Files -RepositoryInformation $RepositoryInformation
             $ReturnInformation = ConvertTo-JSON -InputObject $ReturnInformationJSON
             
-			Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
+            # TODO: Import Integration Modules and the automation json file before importing settings
+			# Importing a connection object in settings without Integration Module already imported will result in error
+            
+            Foreach($SettingsFilePath in $ReturnInformation.SettingsFiles)
             {
                 Publish-SMASettingsFileChange -FilePath $SettingsFilePath `
                                          -CurrentCommit $TFSChange.CurrentCommit `

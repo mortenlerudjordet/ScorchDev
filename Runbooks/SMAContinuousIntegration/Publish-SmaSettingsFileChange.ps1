@@ -195,7 +195,6 @@ Workflow Publish-SMASettingsFileChange
 		
 		$ConnectionsJSON = Get-SmaGlobalFromFile -FilePath $FilePath -GlobalType Connections
         $Connections = ConvertFrom-PSCustomObject -InputObject (ConvertFrom-Json -InputObject $ConnectionsJSON)
-        # initial before moving to functions
 		# Get all connection types in SMA
 		$SMAConnectionTypes = Get-SmaConnectionType -WebServiceEndpoint $CIVariables.WebserviceEndpoint `
 													 -Port $CIVariables.WebservicePort `
