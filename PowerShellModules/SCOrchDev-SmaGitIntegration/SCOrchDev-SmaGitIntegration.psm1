@@ -461,19 +461,28 @@ Function Find-GitRepositoryChange
     Set-Location $RepositoryInformation.Path
       
     $ReturnObj = @{ 'CurrentCommit' = $RepositoryInformation.CurrentCommit;
+                    'RunbookFiles' = @();
                     'Files' = @() }
     
     $NewCommit = (git rev-parse --short HEAD)
     $ModifiedFiles = git diff --name-status (Select-FirstValid -Value $RepositoryInformation.CurrentCommit, (git rev-list --max-parents=0 HEAD) -FilterScript { $_ -ne -1 }) $NewCommit
     $ReturnObj = @{ 'CurrentCommit' = $NewCommit ; 'Files' = @() }
     Foreach($File in $ModifiedFiles)
-    {
+    {        
         if("$($File)" -Match '([a-zA-Z])\s+(.+\/([^\./]+(\..+)))$')
         {
-            $ReturnObj.Files += @{ 'FullPath' = "$($RepositoryInformation.Path)\$($Matches[2].Replace('/','\'))" ;
+            $FullPath = "$($RepositoryInformation.Path)\$($Matches[2].Replace('/','\'))"
+            $ReturnObj.Files += @{ 'FullPath' =  $FullPath;
                                    'FileName' = $Matches[3] ;
                                    'FileExtension' = $Matches[4].ToLower()
                                    'ChangeType' = $Matches[1] }
+            # Save all runbook files, as runbook dependency calculate function uses them
+            if( $Matches[4].ToLower() -eq "ps1" -and $FullPath -like $RepositoryInformation.RunBookFolder) {
+                $ReturnObj.RunbookFiles += @{ 'FullPath' = $FullPath ;
+                                              'FileName' = $Matches[3] ;
+                                              'FileExtension' = $Matches[4].ToLower()
+                                              'ChangeType' = $Matches[1] }
+            }
         }
     }
     

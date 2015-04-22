@@ -586,7 +586,7 @@ Function Find-TFSChange
                                             'FullPath' 		= 	$ServerPath;
                                             'FileName' 		=	$ServerPath.Split('\')[-1];
                                             'FileExtension' = 	$FileExtension;
-                                            'ChangesetID'	= 	$ChangesetID;
+                                            'ChangesetID'	= 	$item.ChangesetID;
                                             'ChangeType'    =   "D"
                                     }
                                 }

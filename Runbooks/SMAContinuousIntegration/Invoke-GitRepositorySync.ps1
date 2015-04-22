@@ -128,7 +128,32 @@ Workflow Invoke-GitRepositorySync
                 
                 Checkpoint-Workflow
             }
+            # Code below handles also runbook dependencies and publishes all in the correct order
+            $AllRunbooks = $RepositoryChange.RunbookFiles
+            $FilesToUpdate = $ReturnInformation.ScriptFiles
             
+            # NOTE: SMACred must have access to read files in local TFS mapped folder
+            InlineScript {
+                #Import-Module -Name 'SMARunbooksImportSDK'
+                Import-VCSRunbooks -WFsToUpdate $Using:FilesToUpdate `
+                                   -wfAllList $Using:AllRunbooks `
+                                   -WebServiceEndpoint $Using:WebServiceEndpoint `
+                                   -Port $Using:Port `
+                                   -ErrorAction Continue
+                                   
+            } -PSCredential $SMACred -PSRequiredModules 'SMARunbooksImportSDK' -PSError $inlError -ErrorAction Continue
+            If($inlError) {
+                Write-Exception -Stream Error -Exception $inlError
+                # Suspend workflow if error is detected
+                Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
+                $inlError = $Null
+                
+            }
+            Checkpoint-Workflow
+            
+            # Old code
+            <#
+           
             Foreach($RunbookFilePath in $ReturnInformation.ScriptFiles)
             {
                 Publish-SMARunbookChange -FilePath $RunbookFilePath `
@@ -136,6 +161,8 @@ Workflow Invoke-GitRepositorySync
                                          -RepositoryName $RepositoryName
                 Checkpoint-Workflow
             }
+             #>
+            
             
             if($ReturnInformation.CleanRunbooks)
             {
