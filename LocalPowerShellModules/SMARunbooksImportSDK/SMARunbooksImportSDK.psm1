@@ -15,8 +15,8 @@ Function Import-VCSRunbooks
             Same as WFsToUpdate but converted to JSON
 		.Parameter wfAllList
 			Full name path of all workflow ps1 files in source control or in a file folder
-		.Parameter Tag
-			Text to update Tags field of Runbok with
+		.Parameter RepositoryName `
+			Name of Git repository or TFS project
 		.Parameter WebServiceEndpoint
 			URL of SMA
 		.Parameter Port
@@ -27,13 +27,13 @@ Function Import-VCSRunbooks
                 'FullPath' 		= 	"c:\source\folder\workflow1.ps1";
                 'FileName' 		=	"workflow1.ps1";
                 'FileExtension' = 	"ps1";
-                'CurrentCommit'	= 	123123
+                'CurrentCommit'	= 	"ChangesetID/Commit:11432"
             }
             $ToUpdate2 = @{ 	
                 'FullPath' 		= 	"c:\source\folder\workflow2.ps1";
                 'FileName' 		=	"workflow2.ps1";
                 'FileExtension' = 	"ps1";
-                'CurrentCommit'	= 	123124
+                'CurrentCommit'	= 	"ChangesetID/Commit:11432"
             }
             
             Import-VCSRunbooks -WFsToUpdate @($ToUpdate,$ToUpdate2) -wfAllList @("c:\source\folder\workflow1.ps1","c:\source\folder\workflow2.ps1", "c:\source\folder\workflow3.ps1","c:\source\folder\workflow4.ps1")
@@ -53,7 +53,10 @@ Function Import-VCSRunbooks
         [Parameter()]
 		[string]$WebServiceEndpoint = "https://localhost",
         [Parameter()]
-		[string]$Port = "9090"
+		[string]$Port = "9090",
+        [Parameter(Mandatory=$True)]
+        [String]
+        $RepositoryName
     )
     If($WFsToUpdateJSON) {
         $WFsToUpdate = ConvertFrom-Json -InputObject $WFsToUpdateJSON
@@ -97,17 +100,17 @@ Function Import-VCSRunbooks
 		$Global:wfDependancyList = $Null
         Write-Debug -Message "Import-VCSRunbooks: wfDependancyList: $($Global:wfDependancyList)"
 		$Global:wfDependancyList = New-Object -TypeName System.Collections.ArrayList
-		Write-Debug -Message "Import-VCSRunbooks: Runbook FullName: $($wf.FullName)"
-		$RunbookDep.FullName = $wf.FullName
+		Write-Debug -Message "Import-VCSRunbooks: Runbook FullName: $($wf.FullPath)"
+		$RunbookDep.FullName = $wf.FullPath
         # Only get the name of the file and not the extension
 		Write-Debug -Message "Import-VCSRunbooks: Runbook Name: $(($wf.FileName).Split('.')[-2])"
 		$RunbookDep.RunbookName = ($wf.FileName).Split('.')[-2]
-        Write-Debug -Message "Import-VCSRunbooks: ChangesetID of file: $($wf.ChangesetID)"
-		$RunbookDep.Tag = "ChangesetID:$($wf.ChangesetID)"
+        Write-Debug -Message "Import-VCSRunbooks: Commit / ChangesetID number: $($wf.CurrentCommit)"
+		$RunbookDep.Tag = $wf.CurrentCommit
 		# Build dependency tree for updated workflow
 		Write-Verbose -Message "Retrieving all dependencies for: $($RunbookDep.RunbookName)"
 		Write-Debug -Message "Import-VCSRunbooks: calling Get-RunbookDependencies with $($RunbookDep.FullName)"
-		Get-RunbookDependencies -Path $wf.FullName -ErrorAction Continue -ErrorVariable oErr
+		Get-RunbookDependencies -Path $wf.FullPath -ErrorAction Continue -ErrorVariable oErr
         If($oErr) {
 		    Write-Error -Message "Error in Import-VCSRunbooks: $oErr" -ErrorAction Continue
 		    $oErr = $Null
@@ -130,7 +133,7 @@ Function Import-VCSRunbooks
         # Publish original updated workflow if not already published
 		If($DoneProcessList -notcontains $wf.FullName) {
             Write-Debug -Message "Import-VCSRunbooks: Publishing Runbook: $($wf.RunbookName)"
-		    Publish-Runbook -Path $wf.FullName -WebServiceEndpoint $WebServiceEndpoint -Tag $wf.Tag -Port $Port -ErrorAction Continue -ErrorVariable oErr
+		    Publish-Runbook -Path $wf.FullName -Tag $wf.Tag -RepositoryName $RepositoryName -WebServiceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
             If($oErr) {
 		        Write-Error -Message "Error in Import-VCSRunbooks: $oErr" -ErrorAction Continue
 		        $oErr = $Null
@@ -341,7 +344,11 @@ Function Publish-Runbook
 		$Port,
 		[Parameter()]
         [string]
-		$Tag
+		$Tag,
+        [Parameter()]
+        [String]
+        $RepositoryName
+        
     )
     Write-Debug -Message "Publish-Runbook Path: $Path"
     Write-Debug -Message "Type: $($Path.GEtType())"
@@ -361,7 +368,9 @@ Function Publish-Runbook
 
         Write-Debug -Message "Writing tag for runbook ID: $($SmaRb.RunbookID )"
         If($Tag) {
-			Write-Debug -Message "Setting tag"
+			# New Runbook import create initial Tag
+            $Tag = "RepositoryName:$RepositoryName;" + $Tag
+            Write-Debug -Message "Setting tag"
 			Set-SmaRunbookTags -RunbookID $SmaRb.RunbookID -Tags $Tag -WebserviceEndpoint $WebServiceEndpoint -Port $Port -ErrorAction Continue -ErrorVariable oErr
             If($oErr) {
 		        Write-Error -Message "Error in Publish-Runbook: $oErr" -ErrorAction Continue

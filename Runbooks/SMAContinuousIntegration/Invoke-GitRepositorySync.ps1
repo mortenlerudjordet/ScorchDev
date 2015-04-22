@@ -137,6 +137,7 @@ Workflow Invoke-GitRepositorySync
                 #Import-Module -Name 'SMARunbooksImportSDK'
                 Import-VCSRunbooks -WFsToUpdate $Using:FilesToUpdate `
                                    -wfAllList $Using:AllRunbooks `
+                                   -RepositoryName $Using:RepositoryName `
                                    -WebServiceEndpoint $Using:WebServiceEndpoint `
                                    -Port $Using:Port `
                                    -ErrorAction Continue
@@ -145,7 +146,7 @@ Workflow Invoke-GitRepositorySync
             If($inlError) {
                 Write-Exception -Stream Error -Exception $inlError
                 # Suspend workflow if error is detected
-                Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
+                Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Continue
                 $inlError = $Null
                 
             }

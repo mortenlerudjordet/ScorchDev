@@ -575,7 +575,8 @@ Function Find-TFSChange
                                                                     'FullPath' 		= 	$ServerPath;
                                                                     'FileName' 		=	$ServerPath.Split('\')[-1];
                                                                     'FileExtension' = 	$FileExtension;
-                                                                    'ChangesetID'	= 	$item.ChangesetID;
+                                                                    'CurrentCommit'	= 	"ChangesetID:$($item.ChangesetID);";
+                                                                    'ChangesetID'   =   $item.ChangesetID;
                                                                     'ChangeType'    =   "A"
                                                                 }
                                 }
@@ -586,7 +587,8 @@ Function Find-TFSChange
                                             'FullPath' 		= 	$ServerPath;
                                             'FileName' 		=	$ServerPath.Split('\')[-1];
                                             'FileExtension' = 	$FileExtension;
-                                            'ChangesetID'	= 	$item.ChangesetID;
+                                            'CurrentCommit'	= 	"ChangesetID:$($item.ChangesetID);";
+                                            'ChangesetID'   =   $item.ChangesetID;
                                             'ChangeType'    =   "D"
                                     }
                                 }

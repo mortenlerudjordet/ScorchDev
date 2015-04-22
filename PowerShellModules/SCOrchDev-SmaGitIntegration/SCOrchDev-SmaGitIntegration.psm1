@@ -474,14 +474,12 @@ Function Find-GitRepositoryChange
             $FullPath = "$($RepositoryInformation.Path)\$($Matches[2].Replace('/','\'))"
             $ReturnObj.Files += @{ 'FullPath' =  $FullPath;
                                    'FileName' = $Matches[3] ;
-                                   'FileExtension' = $Matches[4].ToLower()
+                                   'FileExtension' = $Matches[4].ToLower();
+                                   'CurrentCommit' = "CurrentCommit:$NewCommit;";
                                    'ChangeType' = $Matches[1] }
             # Save all runbook files, as runbook dependency calculate function uses them
             if( $Matches[4].ToLower() -eq "ps1" -and $FullPath -like $RepositoryInformation.RunBookFolder) {
-                $ReturnObj.RunbookFiles += @{ 'FullPath' = $FullPath ;
-                                              'FileName' = $Matches[3] ;
-                                              'FileExtension' = $Matches[4].ToLower()
-                                              'ChangeType' = $Matches[1] }
+                $ReturnObj.RunbookFiles += $FullPath
             }
         }
     }

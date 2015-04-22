@@ -144,6 +144,7 @@ Workflow Invoke-TFSRepositorySync
                 #Import-Module -Name 'SMARunbooksImportSDK'
                 Import-VCSRunbooks -WFsToUpdate $Using:FilesToUpdate `
                                    -wfAllList $Using:AllRunbooks `
+                                   -RepositoryName $Using:RepositoryName `
                                    -WebServiceEndpoint $Using:WebServiceEndpoint `
                                    -Port $Using:Port `
                                    -ErrorAction Continue
@@ -152,9 +153,8 @@ Workflow Invoke-TFSRepositorySync
             If($inlError) {
                 Write-Exception -Stream Error -Exception $inlError
                 # Suspend workflow if error is detected
-                Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Stop
+                Write-Error -Message "There where errors importing Runbooks: $inlError" -ErrorAction Continue
                 $inlError = $Null
-                
             }
             Checkpoint-Workflow
 
